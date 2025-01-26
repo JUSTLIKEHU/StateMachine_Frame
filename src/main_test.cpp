@@ -25,6 +25,9 @@ int main() {
         fsm.setConditionValue("is_powered", 150);
         fsm.setConditionValue("is_connected", 150);
 
+        // 处理事件
+        fsm.handleEvent("TURN_OFF"); // 从 ON -> OFF
+
         // 获取当前状态
         std::cout << "Current state: " << fsm.getCurrentState() << std::endl;
     } catch (const std::exception& e) {

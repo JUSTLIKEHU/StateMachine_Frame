@@ -14,6 +14,8 @@
 #include <map>
 #include <stdexcept>
 #include <fstream>
+#include <vector>
+#include <memory>
 #include "nlohmann-json/json.hpp" // 引入 nlohmann/json 库
 
 using json = nlohmann::json;
@@ -37,6 +39,13 @@ struct TransitionRule {
     std::string conditionsOperator; // 条件运算符 ("AND" 或 "OR")
 };
 
+// 状态信息
+struct StateInfo {
+    State name;                     // 状态名称
+    State parent;                   // 父状态名称（可为空）
+    std::vector<State> children;    // 子状态列表
+};
+
 // 状态转移处理器抽象类
 class TransitionHandler {
 public:
@@ -55,8 +64,15 @@ public:
     }
 
     // 添加状态
-    void addState(const State& state) {
-        states[state] = {};
+    void addState(const State& name, const State& parent = "") {
+        if (states.find(name) != states.end()) {
+            throw std::invalid_argument("State already exists: " + name);
+        }
+
+        states[name] = {name, parent, {}};
+        if (!parent.empty()) {
+            states[parent].children.push_back(name);
+        }
     }
 
     // 添加状态转移规则
@@ -90,44 +106,34 @@ public:
 
     // 处理事件
     void handleEvent(const Event& event) {
-        auto key = std::make_pair(currentState, event);
-        if (eventTransitions.find(key) != eventTransitions.end()) {
-            const auto& rule = eventTransitions[key];
+        // 检查当前状态及其父状态的转移规则
+        State state = currentState;
+        while (!state.empty()) {
+            auto key = std::make_pair(state, event);
+            if (eventTransitions.find(key) != eventTransitions.end()) {
+                const auto& rule = eventTransitions[key];
 
-            // 检查条件是否满足
-            if (checkConditions(rule.conditions, rule.conditionsOperator)) {
-                // 调用状态转移处理器的回调函数
-                if (transitionHandler) {
-                    transitionHandler->onTransition(currentState, event, rule.to);
-                }
-
-                currentState = rule.to; // 更新状态
-                std::cout << "Transition: " << key.first << " -> " << currentState << " on event " << event << std::endl;
-            } else {
-                std::cout << "Conditions not met for transition from " << key.first << " on event " << event << std::endl;
-            }
-        } else {
-            std::cout << "Invalid transition: No transition from " << currentState << " on event " << event << std::endl;
-        }
-    }
-
-    // 检查条件触发规则
-    void checkConditionTransitions() {
-        if (conditionTransitions.find(currentState) != conditionTransitions.end()) {
-            for (const auto& rule : conditionTransitions[currentState]) {
                 // 检查条件是否满足
                 if (checkConditions(rule.conditions, rule.conditionsOperator)) {
                     // 调用状态转移处理器的回调函数
                     if (transitionHandler) {
-                        transitionHandler->onTransition(currentState, "", rule.to);
+                        transitionHandler->onTransition(currentState, event, rule.to);
                     }
 
                     currentState = rule.to; // 更新状态
-                    std::cout << "Condition-based transition: " << rule.from << " -> " << currentState << std::endl;
-                    break; // 一次只触发一个转移
+                    std::cout << "Transition: " << state << " -> " << currentState << " on event " << event << std::endl;
+                    return; // 一次只触发一个转移
+                } else {
+                    std::cout << "Conditions not met for transition from " << state << " on event " << event << std::endl;
+                    return;
                 }
             }
+
+            // 检查父状态
+            state = states[state].parent;
         }
+
+        std::cout << "Invalid transition: No transition from " << currentState << " on event " << event << std::endl;
     }
 
     // 获取当前状态
@@ -135,10 +141,10 @@ public:
         return currentState;
     }
 
-    // 设置条件值
+    // 设置条件值并检查条件触发规则
     void setConditionValue(const std::string& name, int value) {
         conditionValues[name] = value;
-        checkConditionTransitions();    // 检查条件触发规则
+        checkConditionTransitions(); // 自动检查条件触发规则
     }
 
     // 从 JSON 文件加载状态机配置
@@ -153,7 +159,9 @@ public:
 
         // 加载状态
         for (const auto& state : config["states"]) {
-            addState(state);
+            State name = state["name"];
+            State parent = state.value("parent", "");
+            addState(name, parent);
         }
 
         // 加载初始状态
@@ -182,6 +190,32 @@ public:
     }
 
 private:
+    // 检查条件触发规则
+    void checkConditionTransitions() {
+        // 检查当前状态及其父状态的转移规则
+        State state = currentState;
+        while (!state.empty()) {
+            if (conditionTransitions.find(state) != conditionTransitions.end()) {
+                for (const auto& rule : conditionTransitions[state]) {
+                    // 检查条件是否满足
+                    if (checkConditions(rule.conditions, rule.conditionsOperator)) {
+                        // 调用状态转移处理器的回调函数
+                        if (transitionHandler) {
+                            transitionHandler->onTransition(currentState, "", rule.to);
+                        }
+
+                        currentState = rule.to; // 更新状态
+                        std::cout << "Condition-based transition: " << state << " -> " << currentState << std::endl;
+                        return; // 一次只触发一个转移
+                    }
+                }
+            }
+
+            // 检查父状态
+            state = states[state].parent;
+        }
+    }
+
     // 检查条件是否满足
     bool checkConditions(const std::vector<Condition>& conditions, const std::string& op) {
         if (conditions.empty()) {
@@ -207,7 +241,7 @@ private:
     }
 
     // 存储所有状态
-    std::unordered_map<State, bool> states;
+    std::unordered_map<State, StateInfo> states;
 
     // 存储事件触发的状态转移规则
     std::map<std::pair<State, Event>, TransitionRule> eventTransitions;
@@ -229,9 +263,9 @@ private:
 class LightTransitionHandler : public TransitionHandler {
 public:
     void onTransition(const State& from, const Event& event, const State& to) override {
-        (void)event; // 防止未使用的参数警告
-        if (from == "OFF" && to == "ON") {
-            std::cout << "Light turned ON!" << std::endl;
+        (void)event; // 防止未使用的警告
+        if (from == "OFF" && to == "ACTIVE") {
+            std::cout << "Light turned ON and is ACTIVE!" << std::endl;
         } else if (from == "ON" && to == "OFF") {
             std::cout << "Light turned OFF!" << std::endl;
         }

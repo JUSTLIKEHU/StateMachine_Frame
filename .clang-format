@@ -1,0 +1,12 @@
+BasedOnStyle: Google
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+BreakBeforeBraces: Allman
+AllowShortIfStatementsOnASingleLine: false
+ColumnLimit: 100
+DerivePointerAlignment: false
+PointerAlignment: Left
+IndentCaseLabels: true
+IndentPPDirectives: BeforeHash
+SortIncludes: true
