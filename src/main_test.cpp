@@ -20,8 +20,10 @@ int main() {
 
         // 处理事件
         fsm.handleEvent("TURN_ON");  // 从 OFF -> ON
-        fsm.handleEvent("TURN_OFF"); // 从 ON -> OFF
-        fsm.handleEvent("TURN_OFF"); // 无效事件
+
+        // 更新条件值并检查条件触发规则
+        fsm.setConditionValue("is_powered", 150);
+        fsm.setConditionValue("is_connected", 150);
 
         // 获取当前状态
         std::cout << "Current state: " << fsm.getCurrentState() << std::endl;

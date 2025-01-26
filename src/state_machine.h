@@ -31,7 +31,7 @@ struct Condition {
 // 状态转移规则
 struct TransitionRule {
     State from;                     // 起始状态
-    Event event;                    // 事件
+    Event event;                    // 事件（可为空）
     State to;                       // 目标状态
     std::vector<Condition> conditions; // 条件列表
     std::string conditionsOperator; // 条件运算符 ("AND" 或 "OR")
@@ -64,7 +64,20 @@ public:
         if (states.find(rule.from) == states.end() || states.find(rule.to) == states.end()) {
             throw std::invalid_argument("State does not exist");
         }
-        transitions[{rule.from, rule.event}] = rule;
+
+        // 如果事件为空，则添加到条件触发规则列表
+        if (rule.event.empty()) {
+            conditionTransitions[rule.from].push_back(rule);
+        } else {
+            eventTransitions[{rule.from, rule.event}] = rule;
+        }
+
+        // 初始化条件的默认值为 0
+        for (const auto& cond : rule.conditions) {
+            if (conditionValues.find(cond.name) == conditionValues.end()) {
+                conditionValues[cond.name] = 0; // 默认值为 0
+            }
+        }
     }
 
     // 设置初始状态
@@ -78,8 +91,8 @@ public:
     // 处理事件
     void handleEvent(const Event& event) {
         auto key = std::make_pair(currentState, event);
-        if (transitions.find(key) != transitions.end()) {
-            const auto& rule = transitions[key];
+        if (eventTransitions.find(key) != eventTransitions.end()) {
+            const auto& rule = eventTransitions[key];
 
             // 检查条件是否满足
             if (checkConditions(rule.conditions, rule.conditionsOperator)) {
@@ -98,6 +111,25 @@ public:
         }
     }
 
+    // 检查条件触发规则
+    void checkConditionTransitions() {
+        if (conditionTransitions.find(currentState) != conditionTransitions.end()) {
+            for (const auto& rule : conditionTransitions[currentState]) {
+                // 检查条件是否满足
+                if (checkConditions(rule.conditions, rule.conditionsOperator)) {
+                    // 调用状态转移处理器的回调函数
+                    if (transitionHandler) {
+                        transitionHandler->onTransition(currentState, "", rule.to);
+                    }
+
+                    currentState = rule.to; // 更新状态
+                    std::cout << "Condition-based transition: " << rule.from << " -> " << currentState << std::endl;
+                    break; // 一次只触发一个转移
+                }
+            }
+        }
+    }
+
     // 获取当前状态
     State getCurrentState() const {
         return currentState;
@@ -106,6 +138,7 @@ public:
     // 设置条件值
     void setConditionValue(const std::string& name, int value) {
         conditionValues[name] = value;
+        checkConditionTransitions();    // 检查条件触发规则
     }
 
     // 从 JSON 文件加载状态机配置
@@ -130,7 +163,7 @@ public:
         for (const auto& transition : config["transitions"]) {
             TransitionRule rule;
             rule.from = transition["from"];
-            rule.event = transition["event"];
+            rule.event = transition.value("event", ""); // 事件可为空
             rule.to = transition["to"];
             rule.conditionsOperator = transition.value("conditions_operator", "AND");
 
@@ -176,8 +209,11 @@ private:
     // 存储所有状态
     std::unordered_map<State, bool> states;
 
-    // 存储状态转移规则
-    std::map<std::pair<State, Event>, TransitionRule> transitions;
+    // 存储事件触发的状态转移规则
+    std::map<std::pair<State, Event>, TransitionRule> eventTransitions;
+
+    // 存储条件触发的状态转移规则
+    std::unordered_map<State, std::vector<TransitionRule>> conditionTransitions;
 
     // 当前状态
     State currentState;
@@ -193,9 +229,10 @@ private:
 class LightTransitionHandler : public TransitionHandler {
 public:
     void onTransition(const State& from, const Event& event, const State& to) override {
-        if (from == "OFF" && event == "TURN_ON" && to == "ON") {
+        (void)event; // 防止未使用的参数警告
+        if (from == "OFF" && to == "ON") {
             std::cout << "Light turned ON!" << std::endl;
-        } else if (from == "ON" && event == "TURN_OFF" && to == "OFF") {
+        } else if (from == "ON" && to == "OFF") {
             std::cout << "Light turned OFF!" << std::endl;
         }
     }

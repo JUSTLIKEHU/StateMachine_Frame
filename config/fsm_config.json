@@ -23,8 +23,18 @@
         },
         {
             "from": "ON",
-            "event": "TURN_OFF",
-            "to": "OFF"
+            "to": "OFF",
+            "conditions": [
+                {
+                    "name": "is_powered",
+                    "range": [101,200]
+                },
+                {
+                    "name": "is_connected",
+                    "range": [101,200]
+                }
+            ],
+            "conditions_operator": "OR"
         }
     ]
 }
