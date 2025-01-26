@@ -1,16 +1,30 @@
 {
-  "states": ["OFF", "ON"],
-  "initial_state": "OFF",
-  "transitions": [
-      {
-          "from": "OFF",
-          "event": "TURN_ON",
-          "to": "ON"
-      },
-      {
-          "from": "ON",
-          "event": "TURN_OFF",
-          "to": "OFF"
-      }
-  ]
+    "states": [
+        "OFF",
+        "ON"
+    ],
+    "initial_state": "OFF",
+    "transitions": [
+        {
+            "from": "OFF",
+            "event": "TURN_ON",
+            "to": "ON",
+            "conditions": [
+                {
+                    "name": "is_powered",
+                    "range": [0, 100]
+                },
+                {
+                    "name": "is_connected",
+                    "range": [0, 100]
+                }
+            ],
+            "conditions_operator": "AND"
+        },
+        {
+            "from": "ON",
+            "event": "TURN_OFF",
+            "to": "OFF"
+        }
+    ]
 }

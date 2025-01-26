@@ -22,8 +22,21 @@ using json = nlohmann::json;
 using State = std::string;
 using Event = std::string;
 
-// 定义状态转移时的回调函数类型
-using TransitionCallback = std::function<void()>;
+// 条件类型
+struct Condition {
+    std::string name;       // 条件名称
+    std::pair<int, int> range; // 条件范围 [min, max]
+};
+
+// 状态转移规则
+struct TransitionRule {
+    State from;                     // 起始状态
+    Event event;                    // 事件
+    State to;                       // 目标状态
+    std::vector<Condition> conditions; // 条件列表
+    std::string conditionsOperator; // 条件运算符 ("AND" 或 "OR")
+};
+
 // 状态转移处理器抽象类
 class TransitionHandler {
 public:
@@ -37,7 +50,7 @@ public:
 class FiniteStateMachine {
 public:
     // 设置状态转移处理器
-    void setTransitionHandler(TransitionHandler* handler) {
+    void setTransitionHandler(std::shared_ptr<TransitionHandler> handler) {
         transitionHandler = handler;
     }
 
@@ -47,11 +60,11 @@ public:
     }
 
     // 添加状态转移规则
-    void addTransition(const State& from, const Event& event, const State& to) {
-        if (states.find(from) == states.end() || states.find(to) == states.end()) {
+    void addTransition(const TransitionRule& rule) {
+        if (states.find(rule.from) == states.end() || states.find(rule.to) == states.end()) {
             throw std::invalid_argument("State does not exist");
         }
-        transitions[{from, event}] = to;
+        transitions[{rule.from, rule.event}] = rule;
     }
 
     // 设置初始状态
@@ -66,15 +79,20 @@ public:
     void handleEvent(const Event& event) {
         auto key = std::make_pair(currentState, event);
         if (transitions.find(key) != transitions.end()) {
-            State nextState = transitions[key];
+            const auto& rule = transitions[key];
 
-            // 调用状态转移处理器的回调函数
-            if (transitionHandler) {
-                transitionHandler->onTransition(currentState, event, nextState);
+            // 检查条件是否满足
+            if (checkConditions(rule.conditions, rule.conditionsOperator)) {
+                // 调用状态转移处理器的回调函数
+                if (transitionHandler) {
+                    transitionHandler->onTransition(currentState, event, rule.to);
+                }
+
+                currentState = rule.to; // 更新状态
+                std::cout << "Transition: " << key.first << " -> " << currentState << " on event " << event << std::endl;
+            } else {
+                std::cout << "Conditions not met for transition from " << key.first << " on event " << event << std::endl;
             }
-
-            currentState = nextState; // 更新状态
-            std::cout << "Transition: " << key.first << " -> " << currentState << " on event " << event << std::endl;
         } else {
             std::cout << "Invalid transition: No transition from " << currentState << " on event " << event << std::endl;
         }
@@ -83,6 +101,11 @@ public:
     // 获取当前状态
     State getCurrentState() const {
         return currentState;
+    }
+
+    // 设置条件值
+    void setConditionValue(const std::string& name, int value) {
+        conditionValues[name] = value;
     }
 
     // 从 JSON 文件加载状态机配置
@@ -105,25 +128,65 @@ public:
 
         // 加载状态转移规则
         for (const auto& transition : config["transitions"]) {
-            State from = transition["from"];
-            Event event = transition["event"];
-            State to = transition["to"];
-            addTransition(from, event, to);
+            TransitionRule rule;
+            rule.from = transition["from"];
+            rule.event = transition["event"];
+            rule.to = transition["to"];
+            rule.conditionsOperator = transition.value("conditions_operator", "AND");
+
+            // 加载条件
+            if (transition.contains("conditions")) {
+                for (const auto& condition : transition["conditions"]) {
+                    Condition cond;
+                    cond.name = condition["name"];
+                    cond.range = {condition["range"][0], condition["range"][1]};
+                    rule.conditions.push_back(cond);
+                }
+            }
+
+            addTransition(rule);
         }
     }
 
 private:
+    // 检查条件是否满足
+    bool checkConditions(const std::vector<Condition>& conditions, const std::string& op) {
+        if (conditions.empty()) {
+            return true; // 无条件限制
+        }
+
+        for (const auto& cond : conditions) {
+            if (conditionValues.find(cond.name) == conditionValues.end()) {
+                throw std::invalid_argument("Condition value not set: " + cond.name);
+            }
+
+            int value = conditionValues[cond.name];
+            bool isMet = (value >= cond.range.first && value <= cond.range.second);
+
+            if (op == "AND" && !isMet) {
+                return false; // AND 条件不满足
+            } else if (op == "OR" && isMet) {
+                return true; // OR 条件满足
+            }
+        }
+
+        return (op == "AND"); // AND 条件全部满足，或 OR 条件全部不满足
+    }
+
     // 存储所有状态
     std::unordered_map<State, bool> states;
 
     // 存储状态转移规则
-    std::map<std::pair<State, Event>, State> transitions;
+    std::map<std::pair<State, Event>, TransitionRule> transitions;
 
     // 当前状态
     State currentState;
 
+    // 条件值
+    std::unordered_map<std::string, int> conditionValues;
+
     // 状态转移处理器
-    TransitionHandler* transitionHandler = nullptr;
+    std::shared_ptr<TransitionHandler> transitionHandler;
 };
 
 // 用户自定义的状态转移处理器
