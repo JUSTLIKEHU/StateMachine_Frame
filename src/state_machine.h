@@ -24,21 +24,34 @@ using Event = std::string;
 
 // 定义状态转移时的回调函数类型
 using TransitionCallback = std::function<void()>;
+// 状态转移处理器抽象类
+class TransitionHandler {
+public:
+    virtual ~TransitionHandler() = default;
+
+    // 状态转移时的回调函数
+    virtual void onTransition(const State& from, const Event& event, const State& to) = 0;
+};
 
 // 有限状态机类
 class FiniteStateMachine {
 public:
+    // 设置状态转移处理器
+    void setTransitionHandler(TransitionHandler* handler) {
+        transitionHandler = handler;
+    }
+
     // 添加状态
     void addState(const State& state) {
         states[state] = {};
     }
 
     // 添加状态转移规则
-    void addTransition(const State& from, const Event& event, const State& to, TransitionCallback callback = nullptr) {
+    void addTransition(const State& from, const Event& event, const State& to) {
         if (states.find(from) == states.end() || states.find(to) == states.end()) {
             throw std::invalid_argument("State does not exist");
         }
-        transitions[{from, event}] = {to, callback};
+        transitions[{from, event}] = to;
     }
 
     // 设置初始状态
@@ -53,11 +66,14 @@ public:
     void handleEvent(const Event& event) {
         auto key = std::make_pair(currentState, event);
         if (transitions.find(key) != transitions.end()) {
-            auto& transition = transitions[key];
-            currentState = transition.first; // 更新状态
-            if (transition.second) {
-                transition.second(); // 执行回调函数
+            State nextState = transitions[key];
+
+            // 调用状态转移处理器的回调函数
+            if (transitionHandler) {
+                transitionHandler->onTransition(currentState, event, nextState);
             }
+
+            currentState = nextState; // 更新状态
             std::cout << "Transition: " << key.first << " -> " << currentState << " on event " << event << std::endl;
         } else {
             std::cout << "Invalid transition: No transition from " << currentState << " on event " << event << std::endl;
@@ -101,17 +117,23 @@ private:
     std::unordered_map<State, bool> states;
 
     // 存储状态转移规则
-    std::map<std::pair<State, Event>, std::pair<State, TransitionCallback>> transitions;
+    std::map<std::pair<State, Event>, State> transitions;
 
     // 当前状态
     State currentState;
+
+    // 状态转移处理器
+    TransitionHandler* transitionHandler = nullptr;
 };
 
-// 示例回调函数
-void onTurnOn() {
-    std::cout << "Light turned ON!" << std::endl;
-}
-
-void onTurnOff() {
-    std::cout << "Light turned OFF!" << std::endl;
-}
+// 用户自定义的状态转移处理器
+class LightTransitionHandler : public TransitionHandler {
+public:
+    void onTransition(const State& from, const Event& event, const State& to) override {
+        if (from == "OFF" && event == "TURN_ON" && to == "ON") {
+            std::cout << "Light turned ON!" << std::endl;
+        } else if (from == "ON" && event == "TURN_OFF" && to == "OFF") {
+            std::cout << "Light turned OFF!" << std::endl;
+        }
+    }
+};

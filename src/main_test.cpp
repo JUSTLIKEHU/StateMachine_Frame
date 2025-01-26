@@ -6,6 +6,10 @@ int main() {
     // 创建有限状态机
     FiniteStateMachine fsm;
 
+    // 创建用户自定义的状态转移处理器
+    LightTransitionHandler handler;
+    fsm.setTransitionHandler(&handler);
+
     try {
         // 从 JSON 文件加载配置
         fsm.loadFromJSON("../../config/fsm_config.json");
