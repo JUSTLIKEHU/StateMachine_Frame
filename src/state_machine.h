@@ -165,6 +165,7 @@ public:
 
     // 获取当前状态
     State getCurrentState() const {
+        std::lock_guard<std::mutex> lock(stateMutex);
         return currentState;
     }
 
@@ -248,7 +249,7 @@ private:
 
     // 处理单个事件
     void processEvent(const Event& event) {
-        // 将原来 handleEvent 的核心逻辑移到这里
+        std::lock_guard<std::mutex> lock(stateMutex);
         State state = currentState;
         while (!state.empty()) {
             auto key = std::make_pair(state, event);
@@ -270,6 +271,7 @@ private:
 
     // 检查条件触发规则
     void checkConditionTransitions() {
+        std::lock_guard<std::mutex> lock(stateMutex);
         // 检查当前状态及其父状态的转移规则
         State state = currentState;
         while (!state.empty()) {
@@ -296,6 +298,7 @@ private:
 
     // 检查条件是否满足
     bool checkConditions(const std::vector<Condition>& conditions, const std::string& op) {
+        std::lock_guard<std::mutex> lock(conditionMutex);
         if (conditions.empty()) {
             return true; // 无条件限制
         }
@@ -355,6 +358,7 @@ private:
     std::condition_variable eventCV;
     std::queue<ConditionUpdateEvent> conditionQueue;
     std::mutex conditionMutex;
+    mutable std::mutex stateMutex;
 };
 
 // 用户自定义的状态转移处理器

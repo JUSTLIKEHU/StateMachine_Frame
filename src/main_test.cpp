@@ -3,40 +3,52 @@
 #include <thread>
 #include <chrono>
 
+void eventThread(FiniteStateMachine& fsm) {
+    for (int i = 0; i < 5; ++i) {
+        fsm.handleEvent("TURN_ON");
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        fsm.handleEvent("TURN_OFF");
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+}
+
+void conditionThread(FiniteStateMachine& fsm) {
+    for (int i = 0; i < 5; ++i) {
+        fsm.setConditionValue("is_powered", 50);
+        fsm.setConditionValue("is_connected", 75);
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+        fsm.setConditionValue("is_powered", 150);
+        fsm.setConditionValue("is_connected", 150);
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    }
+}
+
 int main() {
     FiniteStateMachine fsm;
     auto handler = std::make_shared<LightTransitionHandler>();
     fsm.setTransitionHandler(handler);
 
     try {
-        // 初始化状态机
         if (!fsm.Init("../../config/fsm_config.json")) {
             std::cerr << "Failed to initialize state machine" << std::endl;
             return 1;
         }
 
-        // 启动状态机
         if (!fsm.start()) {
             std::cerr << "Failed to start state machine" << std::endl;
             return 1;
         }
 
-        // 异步设置条件和发送事件
-        fsm.setConditionValue("is_powered", 50);
-        fsm.setConditionValue("is_connected", 75);
-        fsm.handleEvent("TURN_ON");
+        // 创建多个线程同时操作状态机
+        std::thread t1(eventThread, std::ref(fsm));
+        std::thread t2(conditionThread, std::ref(fsm));
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        // 等待线程完成
+        t1.join();
+        t2.join();
 
-        fsm.setConditionValue("is_powered", 150);
-        fsm.setConditionValue("is_connected", 150);
-        fsm.handleEvent("TURN_OFF");
+        std::cout << "Final state: " << fsm.getCurrentState() << std::endl;
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
-        std::cout << "Current state: " << fsm.getCurrentState() << std::endl;
-
-        // 停止状态机
         fsm.stop();
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
