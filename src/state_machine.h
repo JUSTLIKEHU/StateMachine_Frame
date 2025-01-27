@@ -1,4 +1,3 @@
-
 /**
   * @file state_machine.h
   * @brief State machine class definition
@@ -17,6 +16,10 @@
 #include <vector>
 #include <memory>
 #include "nlohmann-json/json.hpp" // 引入 nlohmann/json 库
+#include <queue>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
 
 using json = nlohmann::json;
 
@@ -55,9 +58,65 @@ public:
     virtual void onTransition(const State& from, const Event& event, const State& to) = 0;
 };
 
+// 在类定义之前添加条件更新事件结构体
+struct ConditionUpdateEvent {
+    std::string name;
+    int value;
+};
+
 // 有限状态机类
 class FiniteStateMachine {
 public:
+    FiniteStateMachine() : running(false), initialized(false) {}
+    ~FiniteStateMachine() {
+        stop();
+    }
+
+    // 初始化接口
+    bool Init(const std::string& configFile) {
+        try {
+            loadFromJSON(configFile);
+            initialized = true;
+            return true;
+        } catch (const std::exception& e) {
+            std::cerr << "Initialization failed: " << e.what() << std::endl;
+            return false;
+        }
+    }
+
+    // 启动状态机
+    bool start() {
+        if (!initialized) {
+            std::cerr << "State machine not initialized!" << std::endl;
+            return false;
+        }
+        
+        if (running) {
+            std::cerr << "State machine already running!" << std::endl;
+            return false;
+        }
+
+        running = true;
+        workerThread = std::thread(&FiniteStateMachine::processLoop, this);
+        return true;
+    }
+
+    // 停止状态机
+    void stop() {
+        running = false;
+        eventCV.notify_one();
+        if (workerThread.joinable()) {
+            workerThread.join();
+        }
+    }
+
+    // 处理事件（新版本 - 线程安全）
+    void handleEvent(const Event& event) {
+        std::lock_guard<std::mutex> lock(eventMutex);
+        eventQueue.push(event);
+        eventCV.notify_one();
+    }
+
     // 设置状态转移处理器
     void setTransitionHandler(std::shared_ptr<TransitionHandler> handler) {
         transitionHandler = handler;
@@ -104,47 +163,16 @@ public:
         currentState = state;
     }
 
-    // 处理事件
-    void handleEvent(const Event& event) {
-        // 检查当前状态及其父状态的转移规则
-        State state = currentState;
-        while (!state.empty()) {
-            auto key = std::make_pair(state, event);
-            if (eventTransitions.find(key) != eventTransitions.end()) {
-                const auto& rule = eventTransitions[key];
-
-                // 检查条件是否满足
-                if (checkConditions(rule.conditions, rule.conditionsOperator)) {
-                    // 调用状态转移处理器的回调函数
-                    if (transitionHandler) {
-                        transitionHandler->onTransition(currentState, event, rule.to);
-                    }
-
-                    currentState = rule.to; // 更新状态
-                    std::cout << "Transition: " << state << " -> " << currentState << " on event " << event << std::endl;
-                    return; // 一次只触发一个转移
-                } else {
-                    std::cout << "Conditions not met for transition from " << state << " on event " << event << std::endl;
-                    return;
-                }
-            }
-
-            // 检查父状态
-            state = states[state].parent;
-        }
-
-        std::cout << "Invalid transition: No transition from " << currentState << " on event " << event << std::endl;
-    }
-
     // 获取当前状态
     State getCurrentState() const {
         return currentState;
     }
 
-    // 设置条件值并检查条件触发规则
+    // 修改设置条件值接口为异步处理
     void setConditionValue(const std::string& name, int value) {
-        conditionValues[name] = value;
-        checkConditionTransitions(); // 自动检查条件触发规则
+        std::lock_guard<std::mutex> lock(conditionMutex);
+        conditionQueue.push({name, value});
+        eventCV.notify_one();
     }
 
     // 从 JSON 文件加载状态机配置
@@ -190,6 +218,56 @@ public:
     }
 
 private:
+    // 修改处理循环，同时处理事件和条件更新
+    void processLoop() {
+        while (running) {
+            // 处理条件更新和事件
+            {
+                std::unique_lock<std::mutex> lock(eventMutex);
+                eventCV.wait(lock, [this]() {
+                    return !eventQueue.empty() || !conditionQueue.empty() || !running;
+                });
+
+                if (!running) break;
+
+                // 优先处理条件更新
+                processConditionUpdates();
+
+                // 处理事件队列
+                if (!eventQueue.empty()) {
+                    Event event = eventQueue.front();
+                    eventQueue.pop();
+                    processEvent(event);
+                }
+            }
+            
+            // 检查条件触发的转换
+            checkConditionTransitions();
+        }
+    }
+
+    // 处理单个事件
+    void processEvent(const Event& event) {
+        // 将原来 handleEvent 的核心逻辑移到这里
+        State state = currentState;
+        while (!state.empty()) {
+            auto key = std::make_pair(state, event);
+            if (eventTransitions.find(key) != eventTransitions.end()) {
+                const auto& rule = eventTransitions[key];
+                if (checkConditions(rule.conditions, rule.conditionsOperator)) {
+                    if (transitionHandler) {
+                        transitionHandler->onTransition(currentState, event, rule.to);
+                    }
+                    currentState = rule.to;
+                    std::cout << "Transition: " << state << " -> " << currentState 
+                             << " on event " << event << std::endl;
+                    return;
+                }
+            }
+            state = states[state].parent;
+        }
+    }
+
     // 检查条件触发规则
     void checkConditionTransitions() {
         // 检查当前状态及其父状态的转移规则
@@ -240,6 +318,16 @@ private:
         return (op == "AND"); // AND 条件全部满足，或 OR 条件全部不满足
     }
 
+    // 新增：处理条件更新队列
+    void processConditionUpdates() {
+        std::lock_guard<std::mutex> lock(conditionMutex);
+        while (!conditionQueue.empty()) {
+            const auto& update = conditionQueue.front();
+            conditionValues[update.name] = update.value;
+            conditionQueue.pop();
+        }
+    }
+
     // 存储所有状态
     std::unordered_map<State, StateInfo> states;
 
@@ -257,6 +345,16 @@ private:
 
     // 状态转移处理器
     std::shared_ptr<TransitionHandler> transitionHandler;
+
+    // 新增成员变量
+    bool running;
+    bool initialized;
+    std::thread workerThread;
+    std::queue<Event> eventQueue;
+    std::mutex eventMutex;
+    std::condition_variable eventCV;
+    std::queue<ConditionUpdateEvent> conditionQueue;
+    std::mutex conditionMutex;
 };
 
 // 用户自定义的状态转移处理器
