@@ -260,8 +260,11 @@ private:
                         transitionHandler->onTransition(currentState, event, rule.to);
                     }
                     currentState = rule.to;
+                    
+                    // 打印转换信息和满足的条件
                     std::cout << "Transition: " << state << " -> " << currentState 
                              << " on event " << event << std::endl;
+                    printSatisfiedConditions(rule.conditions);
                     return;
                 }
             }
@@ -283,16 +286,33 @@ private:
                         if (transitionHandler) {
                             transitionHandler->onTransition(currentState, "", rule.to);
                         }
-
-                        currentState = rule.to; // 更新状态
-                        std::cout << "Condition-based transition: " << state << " -> " << currentState << std::endl;
+                        currentState = rule.to;
+                        
+                        // 打印转换信息和满足的条件
+                        std::cout << "Condition-based transition: " << state << " -> " 
+                                 << currentState << std::endl;
+                        printSatisfiedConditions(rule.conditions);
                         return; // 一次只触发一个转移
                     }
                 }
             }
-
-            // 检查父状态
             state = states[state].parent;
+        }
+    }
+
+    // 新增：打印满足的条件
+    void printSatisfiedConditions(const std::vector<Condition>& conditions) {
+        std::lock_guard<std::mutex> lock(conditionMutex);
+        if (!conditions.empty()) {
+            std::cout << "Satisfied conditions:" << std::endl;
+            for (const auto& cond : conditions) {
+                int value = conditionValues[cond.name];
+                if (value >= cond.range.first && value <= cond.range.second) {
+                    std::cout << "  - " << cond.name << " = " << value 
+                             << " (range: [" << cond.range.first << ", " 
+                             << cond.range.second << "])" << std::endl;
+                }
+            }
         }
     }
 
