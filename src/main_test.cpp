@@ -40,15 +40,59 @@ int main() {
       return 1;
     }
 
-    // 创建多个线程同时操作状态机
-    std::thread t1(eventThread, std::ref(fsm));
-    std::thread t2(conditionThread, std::ref(fsm));
+    std::cout << "Initial state: " << fsm.getCurrentState() << std::endl;
 
-    // 等待线程完成
-    t1.join();
-    t2.join();
+    // Test OFF -> IDLE transition with duration
+    std::cout << "Setting is_powered=1..." << std::endl;
+    fsm.setConditionValue("is_powered", 1);
+    std::cout << "Current state: " << fsm.getCurrentState() << std::endl;
+
+    // 等待1100ms (比配置的1000ms多一点)
+    std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+    std::cout << "After waiting for duration: " << fsm.getCurrentState() << std::endl;
+
+    // Test IDLE -> STAND_BY transition
+    fsm.setConditionValue("service_ready", 1);
+    fsm.setConditionValue("is_connected", 1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::cout << "After setting service_ready=1 and is_connected=1: " << fsm.getCurrentState()
+              << std::endl;
+
+    // Test STAND_BY -> ACTIVE transition
+    fsm.handleEvent("START");
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::cout << "After START event: " << fsm.getCurrentState() << std::endl;
+
+    // Test ACTIVE -> PAUSED transition
+    fsm.setConditionValue("is_paused", 1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::cout << "After setting is_paused=1: " << fsm.getCurrentState() << std::endl;
+
+    // Test PAUSED -> ACTIVE transition
+    fsm.setConditionValue("is_paused", 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::cout << "After setting is_paused=0: " << fsm.getCurrentState() << std::endl;
+
+    // Test ACTIVE -> STAND_BY transition
+    fsm.handleEvent("USER_STOP");
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::cout << "After USER_STOP event: " << fsm.getCurrentState() << std::endl;
+
+    // // Test STAND_BY -> IDLE transition
+    // fsm.setConditionValue("service_ready", 0);
+    // std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // std::cout << "After setting service_ready=0: " << fsm.getCurrentState() << std::endl;
 
     std::cout << "Final state: " << fsm.getCurrentState() << std::endl;
+
+    while (true) {
+      // Keep the main thread alive to allow the worker threads to execute
+      // This is not a recommended practice and is only used here to keep the example simple
+      // In a real-world application, you should use a condition variable to wait for a signal
+      // from the worker threads before proceeding with any other
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+      std::cout << "Current state: " << fsm.getCurrentState() << std::endl;
+    }
 
     fsm.stop();
   } catch (const std::exception& e) {

@@ -4,11 +4,15 @@
             "name": "OFF"
         },
         {
-            "name": "IDLE",
-            "parent": "OFF"
+            "name": "ON"
         },
         {
-            "name": "ON"
+            "name": "IDLE",
+            "parent": "ON"
+        },
+        {
+            "name": "STAND_BY",
+            "parent": "ON"
         },
         {
             "name": "ACTIVE",
@@ -23,16 +27,15 @@
     "transitions": [
         {
             "from": "OFF",
-            "event": "TURN_ON",
-            "to": "ACTIVE",
+            "to": "IDLE",
             "conditions": [
                 {
                     "name": "is_powered",
-                    "range": [0, 100]
-                },
-                {
-                    "name": "is_connected",
-                    "range": [0, 100]
+                    "range": [
+                        1,
+                        1
+                    ],
+                    "duration": 1000
                 }
             ],
             "conditions_operator": "AND"
@@ -40,18 +43,96 @@
         {
             "from": "ON",
             "to": "OFF",
-            "event": "TURN_OFF",
             "conditions": [
                 {
                     "name": "is_powered",
-                    "range": [101,200]
-                },
-                {
-                    "name": "is_connected",
-                    "range": [101,200]
+                    "range": [
+                        0,
+                        0
+                    ]
                 }
             ],
             "conditions_operator": "OR"
+        },
+        {
+            "from": "IDLE",
+            "to": "STAND_BY",
+            "conditions": [
+                {
+                    "name": "service_ready",
+                    "range": [
+                        1,
+                        1
+                    ]
+                },
+                {
+                    "name": "is_connected",
+                    "range": [
+                        1,
+                        1
+                    ]
+                }
+            ],
+            "conditions_operator": "AND"
+        },
+        {
+            "from": "STAND_BY",
+            "to": "IDLE",
+            "conditions": [
+                {
+                    "name": "service_ready",
+                    "range": [
+                        0,
+                        0
+                    ]
+                },
+                {
+                    "name": "is_connected",
+                    "range": [
+                        0,
+                        0
+                    ]
+                }
+            ],
+            "conditions_operator": "OR"
+        },
+        {
+            "from": "STAND_BY",
+            "to": "ACTIVE",
+            "event": "START"
+        },
+        {
+            "from": "ACTIVE",
+            "to": "PAUSED",
+            "conditions": [
+                {
+                    "name": "is_paused",
+                    "range": [
+                        1,
+                        1
+                    ]
+                }
+            ],
+            "conditions_operator": "AND"
+        },
+        {
+            "from": "PAUSED",
+            "to": "ACTIVE",
+            "conditions": [
+                {
+                    "name": "is_paused",
+                    "range": [
+                        0,
+                        0
+                    ]
+                }
+            ],
+            "conditions_operator": "OR"
+        },
+        {
+            "from": "ACTIVE",
+            "to": "STAND_BY",
+            "event": "USER_STOP"
         }
     ]
 }

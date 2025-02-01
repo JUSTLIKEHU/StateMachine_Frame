@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <condition_variable>
 #include <fstream>
 #include <functional>
@@ -32,6 +33,8 @@ using Event = std::string;
 struct Condition {
   std::string name;           // 条件名称
   std::pair<int, int> range;  // 条件范围 [min, max]
+  int duration{0};            // 条件持续时间(毫秒),默认0表示立即生效
+  std::chrono::steady_clock::time_point lastUpdateTime;  // 最后一次更新时间
 };
 
 // 状态转移规则
@@ -63,13 +66,23 @@ class TransitionHandler {
 struct ConditionUpdateEvent {
   std::string name;
   int value;
+  std::chrono::steady_clock::time_point updateTime;
+};
+
+// 在ConditionUpdateEvent结构体后添加定时条件结构体
+struct DurationCondition {
+  std::string name;
+  std::chrono::steady_clock::time_point expiryTime;
 };
 
 // 有限状态机类
 class FiniteStateMachine {
  public:
   FiniteStateMachine() : running(false), initialized(false) {}
-  ~FiniteStateMachine() { stop(); }
+  ~FiniteStateMachine() {
+    stopTimerThread();
+    stop();
+  }
 
   // 初始化接口
   bool Init(const std::string& configFile) {
@@ -97,6 +110,7 @@ class FiniteStateMachine {
 
     running = true;
     workerThread = std::thread(&FiniteStateMachine::processLoop, this);
+    timerThread = std::thread(&FiniteStateMachine::timerLoop, this);
     return true;
   }
 
@@ -171,7 +185,8 @@ class FiniteStateMachine {
   // 修改设置条件值接口为异步处理
   void setConditionValue(const std::string& name, int value) {
     std::lock_guard<std::mutex> lock(conditionMutex);
-    conditionQueue.push({name, value});
+    ConditionUpdateEvent update{name, value, std::chrono::steady_clock::now()};
+    conditionQueue.push(update);
     eventCV.notify_one();
   }
 
@@ -209,7 +224,9 @@ class FiniteStateMachine {
           Condition cond;
           cond.name = condition["name"];
           cond.range = {condition["range"][0], condition["range"][1]};
+          cond.duration = condition.value("duration", 0);  // 默认为0
           rule.conditions.push_back(cond);
+          allConditions.push_back(cond);
         }
       }
 
@@ -221,19 +238,18 @@ class FiniteStateMachine {
   // 修改处理循环，同时处理事件和条件更新
   void processLoop() {
     while (running) {
-      // 处理条件更新和事件
       {
         std::unique_lock<std::mutex> lock(eventMutex);
-        eventCV.wait(
-            lock, [this]() { return !eventQueue.empty() || !conditionQueue.empty() || !running; });
+        // 保持100ms的检查周期
+        eventCV.wait(lock);
 
         if (!running)
           break;
 
-        // 优先处理条件更新
-        processConditionUpdates();
+        if (!conditionQueue.empty()) {
+          processConditionUpdates();
+        }
 
-        // 处理事件队列
         if (!eventQueue.empty()) {
           Event event = eventQueue.front();
           eventQueue.pop();
@@ -241,7 +257,7 @@ class FiniteStateMachine {
         }
       }
 
-      // 检查条件触发的转换
+      // 统一检查所有条件转换(包括时间条件)
       checkConditionTransitions();
     }
   }
@@ -308,7 +324,8 @@ class FiniteStateMachine {
         int value = conditionValues[cond.name];
         if (value >= cond.range.first && value <= cond.range.second) {
           std::cout << "  - " << cond.name << " = " << value << " (range: [" << cond.range.first
-                    << ", " << cond.range.second << "])" << std::endl;
+                    << ", " << cond.range.second << "],duration: " << cond.duration << ")"
+                    << std::endl;
         }
       }
     }
@@ -321,17 +338,28 @@ class FiniteStateMachine {
       return true;  // 无条件限制
     }
 
+    auto now = std::chrono::steady_clock::now();
+
     for (const auto& cond : conditions) {
       if (conditionValues.find(cond.name) == conditionValues.end()) {
         throw std::invalid_argument("Condition value not set: " + cond.name);
       }
 
       int value = conditionValues[cond.name];
-      bool isMet = (value >= cond.range.first && value <= cond.range.second);
+      bool valueInRange = (value >= cond.range.first && value <= cond.range.second);
 
-      if (op == "AND" && !isMet) {
+      // 检查持续时间
+      if (cond.duration > 0 && conditionLastUpdate.find(cond.name) != conditionLastUpdate.end()) {
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           now - conditionLastUpdate[cond.name])
+                           .count();
+        bool durationMet = (elapsed >= cond.duration);
+        valueInRange = valueInRange && durationMet;
+      }
+
+      if (op == "AND" && !valueInRange) {
         return false;  // AND 条件不满足
-      } else if (op == "OR" && isMet) {
+      } else if (op == "OR" && valueInRange) {
         return true;  // OR 条件满足
       }
     }
@@ -345,7 +373,53 @@ class FiniteStateMachine {
     while (!conditionQueue.empty()) {
       const auto& update = conditionQueue.front();
       conditionValues[update.name] = update.value;
+      conditionLastUpdate[update.name] = update.updateTime;
+
+      // 检查是否有持续时间要求的条件
+      auto it =
+          std::find_if(allConditions.begin(), allConditions.end(), [&](const Condition& cond) {
+            return cond.name == update.name && cond.duration > 0 &&
+                   (update.value >= cond.range.first && update.value <= cond.range.second);
+          });
+
+      if (it != allConditions.end()) {
+        std::lock_guard<std::mutex> timerLock(timerMutex);
+        auto expiryTime = update.updateTime + std::chrono::milliseconds(it->duration);
+        timerQueue.push({update.name, expiryTime});
+        timerCV.notify_one();
+      }
       conditionQueue.pop();
+    }
+  }
+
+  // 新增停止定时器线程的方法
+  void stopTimerThread() {
+    running = false;
+    timerCV.notify_one();
+    if (timerThread.joinable()) {
+      timerThread.join();
+    }
+  }
+
+  // 新增定时器循环处理
+  void timerLoop() {
+    while (running) {
+      std::unique_lock<std::mutex> lock(timerMutex);
+      if (timerQueue.empty()) {
+        timerCV.wait(lock, [this] { return !running || !timerQueue.empty(); });
+        continue;
+      }
+
+      auto now = std::chrono::steady_clock::now();
+      if (now >= timerQueue.top().expiryTime) {
+        auto expiredCondition = timerQueue.top();
+        std::cout << "Duration condition expired: " << expiredCondition.name << std::endl;
+        timerQueue.pop();
+        // 触发条件检查
+        eventCV.notify_one();
+      } else {
+        timerCV.wait_until(lock, timerQueue.top().expiryTime);
+      }
     }
   }
 
@@ -377,6 +451,17 @@ class FiniteStateMachine {
   std::queue<ConditionUpdateEvent> conditionQueue;
   std::mutex conditionMutex;
   mutable std::mutex stateMutex;
+  std::unordered_map<std::string, std::chrono::steady_clock::time_point> conditionLastUpdate;
+  // 添加新的成员变量来存储所有条件
+  std::vector<Condition> allConditions;
+  std::thread timerThread;
+  std::priority_queue<DurationCondition, std::vector<DurationCondition>,
+                      std::function<bool(const DurationCondition&, const DurationCondition&)>>
+      timerQueue{[](const DurationCondition& lhs, const DurationCondition& rhs) {
+        return lhs.expiryTime > rhs.expiryTime;
+      }};
+  std::mutex timerMutex;
+  std::condition_variable timerCV;
 };
 
 // 用户自定义的状态转移处理器
