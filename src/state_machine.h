@@ -58,8 +58,9 @@ class TransitionHandler {
  public:
   virtual ~TransitionHandler() = default;
 
-  // 状态转移时的回调函数
-  virtual void onTransition(const State& from, const Event& event, const State& to) = 0;
+  // 状态转移时的回调函数 - 使用状态集合而非单一状态
+  virtual void onTransition(const std::vector<State>& fromStates, const Event& event,
+                            const std::vector<State>& toStates) = 0;
 };
 
 // 在类定义之前添加条件更新事件结构体
@@ -80,7 +81,7 @@ class FiniteStateMachine {
  public:
   FiniteStateMachine() : running(false), initialized(false) {}
   ~FiniteStateMachine() {
-    stopTimerThread();
+    // 合并了停止定时器和状态机的逻辑
     stop();
   }
 
@@ -117,7 +118,14 @@ class FiniteStateMachine {
   // 停止状态机
   void stop() {
     running = false;
+    // 通知所有等待中的线程
     eventCV.notify_one();
+    timerCV.notify_one();
+    
+    // 等待线程结束
+    if (timerThread.joinable()) {
+      timerThread.join();
+    }
     if (workerThread.joinable()) {
       workerThread.join();
     }
@@ -240,7 +248,6 @@ class FiniteStateMachine {
     while (running) {
       {
         std::unique_lock<std::mutex> lock(eventMutex);
-        // 保持100ms的检查周期
         eventCV.wait(lock);
 
         if (!running)
@@ -262,6 +269,21 @@ class FiniteStateMachine {
     }
   }
 
+  // 获取状态及其所有父状态（从子到父的顺序）
+  std::vector<State> getStateHierarchy(const State& state) const {
+    std::vector<State> hierarchy;
+    State current = state;
+
+    while (!current.empty()) {
+      hierarchy.push_back(current);
+      auto it = states.find(current);
+      if (it == states.end()) break;
+      current = it->second.parent;
+    }
+
+    return hierarchy;
+  }
+
   // 处理单个事件
   void processEvent(const Event& event) {
     std::lock_guard<std::mutex> lock(stateMutex);
@@ -272,7 +294,10 @@ class FiniteStateMachine {
         const auto& rule = eventTransitions[key];
         if (checkConditions(rule.conditions, rule.conditionsOperator)) {
           if (transitionHandler) {
-            transitionHandler->onTransition(currentState, event, rule.to);
+            // 获取起始状态和目标状态的完整层次结构
+            std::vector<State> fromStates = getStateHierarchy(currentState);
+            std::vector<State> toStates = getStateHierarchy(rule.to);
+            transitionHandler->onTransition(fromStates, event, toStates);
           }
           currentState = rule.to;
 
@@ -299,7 +324,10 @@ class FiniteStateMachine {
           if (checkConditions(rule.conditions, rule.conditionsOperator)) {
             // 调用状态转移处理器的回调函数
             if (transitionHandler) {
-              transitionHandler->onTransition(currentState, "", rule.to);
+              // 获取起始状态和目标状态的完整层次结构
+              std::vector<State> fromStates = getStateHierarchy(currentState);
+              std::vector<State> toStates = getStateHierarchy(rule.to);
+              transitionHandler->onTransition(fromStates, "", toStates);
             }
             currentState = rule.to;
 
@@ -392,15 +420,6 @@ class FiniteStateMachine {
     }
   }
 
-  // 新增停止定时器线程的方法
-  void stopTimerThread() {
-    running = false;
-    timerCV.notify_one();
-    if (timerThread.joinable()) {
-      timerThread.join();
-    }
-  }
-
   // 新增定时器循环处理
   void timerLoop() {
     while (running) {
@@ -467,12 +486,30 @@ class FiniteStateMachine {
 // 用户自定义的状态转移处理器
 class LightTransitionHandler : public TransitionHandler {
  public:
-  void onTransition(const State& from, const Event& event, const State& to) override {
+  void onTransition(const std::vector<State>& fromStates, const Event& event,
+                    const std::vector<State>& toStates) override {
     (void)event;  // 防止未使用的警告
+
+    // 获取当前状态（层次结构中的第一个）
+    State from = fromStates.empty() ? "" : fromStates[0];
+    State to = toStates.empty() ? "" : toStates[0];
+
+    // 原有的处理逻辑，但现在可以利用完整的状态层次
     if (from == "OFF" && to == "ACTIVE") {
       std::cout << "Light turned ON and is ACTIVE!" << std::endl;
     } else if (from == "ON" && to == "OFF") {
       std::cout << "Light turned OFF!" << std::endl;
     }
+
+    // 打印完整的状态层次结构信息（可选）
+    std::cout << "Complete transition: ";
+    for (const auto& s : fromStates) {
+      std::cout << s << " ";
+    }
+    std::cout << "-> ";
+    for (const auto& s : toStates) {
+      std::cout << s << " ";
+    }
+    std::cout << std::endl;
   }
 };
