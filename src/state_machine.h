@@ -53,16 +53,6 @@ struct StateInfo {
   std::vector<State> children;  // 子状态列表
 };
 
-// 状态转移处理器抽象类
-class TransitionHandler {
- public:
-  virtual ~TransitionHandler() = default;
-
-  // 状态转移时的回调函数 - 使用状态集合而非单一状态
-  virtual void onTransition(const std::vector<State>& fromStates, const Event& event,
-                            const std::vector<State>& toStates) = 0;
-};
-
 // 在类定义之前添加条件更新事件结构体
 struct ConditionUpdateEvent {
   std::string name;
@@ -74,6 +64,130 @@ struct ConditionUpdateEvent {
 struct DurationCondition {
   std::string name;
   std::chrono::steady_clock::time_point expiryTime;
+};
+
+// 重新设计状态事件处理器为回调函数集合
+class StateEventHandler {
+ public:
+  // 各种回调函数类型定义
+  using TransitionCallback = std::function<void(const std::vector<State>&, const Event&, const std::vector<State>&)>;
+  using PreEventCallback = std::function<bool(const State&, const Event&)>;
+  using EnterStateCallback = std::function<void(const std::vector<State>&)>;
+  using ExitStateCallback = std::function<void(const std::vector<State>&)>;
+  using PostEventCallback = std::function<void(const Event&, bool)>;
+
+  // 默认构造函数
+  StateEventHandler() = default;
+  ~StateEventHandler() = default;
+
+  // 设置状态转换回调
+  void setTransitionCallback(TransitionCallback callback) {
+    transitionCallback = std::move(callback);
+  }
+
+  // 支持类成员函数作为状态转换回调
+  template<typename T>
+  void setTransitionCallback(T* instance, void (T::*method)(const std::vector<State>&, const Event&, const std::vector<State>&)) {
+    transitionCallback = [instance, method](const std::vector<State>& fromStates, const Event& event, const std::vector<State>& toStates) {
+      (instance->*method)(fromStates, event, toStates);
+    };
+  }
+
+  // 设置事件预处理回调
+  void setPreEventCallback(PreEventCallback callback) {
+    preEventCallback = std::move(callback);
+  }
+
+  // 支持类成员函数作为事件预处理回调
+  template<typename T>
+  void setPreEventCallback(T* instance, bool (T::*method)(const State&, const Event&)) {
+    preEventCallback = [instance, method](const State& currentState, const Event& event) {
+      return (instance->*method)(currentState, event);
+    };
+  }
+
+  // 设置状态进入回调
+  void setEnterStateCallback(EnterStateCallback callback) {
+    enterStateCallback = std::move(callback);
+  }
+
+  // 支持类成员函数作为状态进入回调
+  template<typename T>
+  void setEnterStateCallback(T* instance, void (T::*method)(const std::vector<State>&)) {
+    enterStateCallback = [instance, method](const std::vector<State>& states) {
+      (instance->*method)(states);
+    };
+  }
+
+  // 设置状态退出回调
+  void setExitStateCallback(ExitStateCallback callback) {
+    exitStateCallback = std::move(callback);
+  }
+
+  // 支持类成员函数作为状态退出回调
+  template<typename T>
+  void setExitStateCallback(T* instance, void (T::*method)(const std::vector<State>&)) {
+    exitStateCallback = [instance, method](const std::vector<State>& states) {
+      (instance->*method)(states);
+    };
+  }
+
+  // 设置事件回收回调
+  void setPostEventCallback(PostEventCallback callback) {
+    postEventCallback = std::move(callback);
+  }
+
+  // 支持类成员函数作为事件回收回调
+  template<typename T>
+  void setPostEventCallback(T* instance, void (T::*method)(const Event&, bool)) {
+    postEventCallback = [instance, method](const Event& event, bool handled) {
+      (instance->*method)(event, handled);
+    };
+  }
+
+  // 实际处理状态转换
+  void onTransition(const std::vector<State>& fromStates, const Event& event,
+                    const std::vector<State>& toStates) {
+    if (transitionCallback) {
+      transitionCallback(fromStates, event, toStates);
+    }
+  }
+
+  // 实际处理事件预处理
+  bool onPreEvent(const State& currentState, const Event& event) {
+    if (preEventCallback) {
+      return preEventCallback(currentState, event);
+    }
+    return true; // 默认允许所有事件
+  }
+
+  // 实际处理状态进入
+  void onEnterState(const std::vector<State>& states) {
+    if (enterStateCallback) {
+      enterStateCallback(states);
+    }
+  }
+
+  // 实际处理状态退出
+  void onExitState(const std::vector<State>& states) {
+    if (exitStateCallback) {
+      exitStateCallback(states);
+    }
+  }
+
+  // 实际处理事件回收
+  void onPostEvent(const Event& event, bool handled) {
+    if (postEventCallback) {
+      postEventCallback(event, handled);
+    }
+  }
+
+ private:
+  TransitionCallback transitionCallback;
+  PreEventCallback preEventCallback;
+  EnterStateCallback enterStateCallback;
+  ExitStateCallback exitStateCallback;
+  PostEventCallback postEventCallback;
 };
 
 // 有限状态机类
@@ -121,7 +235,7 @@ class FiniteStateMachine {
     // 通知所有等待中的线程
     eventCV.notify_one();
     timerCV.notify_one();
-    
+
     // 等待线程结束
     if (timerThread.joinable()) {
       timerThread.join();
@@ -138,9 +252,94 @@ class FiniteStateMachine {
     eventCV.notify_one();
   }
 
-  // 设置状态转移处理器
-  void setTransitionHandler(std::shared_ptr<TransitionHandler> handler) {
-    transitionHandler = handler;
+  // 设置状态转移回调 - 函数对象版本
+  void setTransitionCallback(StateEventHandler::TransitionCallback callback) {
+    if (!stateEventHandler) {
+      stateEventHandler = std::make_shared<StateEventHandler>();
+    }
+    stateEventHandler->setTransitionCallback(std::move(callback));
+  }
+
+  // 设置状态转移回调 - 类成员函数版本
+  template<typename T>
+  void setTransitionCallback(T* instance, void (T::*method)(const std::vector<State>&, const Event&, const std::vector<State>&)) {
+    if (!stateEventHandler) {
+      stateEventHandler = std::make_shared<StateEventHandler>();
+    }
+    stateEventHandler->setTransitionCallback(instance, method);
+  }
+
+  // 设置事件预处理回调 - 函数对象版本
+  void setPreEventCallback(StateEventHandler::PreEventCallback callback) {
+    if (!stateEventHandler) {
+      stateEventHandler = std::make_shared<StateEventHandler>();
+    }
+    stateEventHandler->setPreEventCallback(std::move(callback));
+  }
+
+  // 设置事件预处理回调 - 类成员函数版本
+  template<typename T>
+  void setPreEventCallback(T* instance, bool (T::*method)(const State&, const Event&)) {
+    if (!stateEventHandler) {
+      stateEventHandler = std::make_shared<StateEventHandler>();
+    }
+    stateEventHandler->setPreEventCallback(instance, method);
+  }
+
+  // 设置状态进入回调 - 函数对象版本
+  void setEnterStateCallback(StateEventHandler::EnterStateCallback callback) {
+    if (!stateEventHandler) {
+      stateEventHandler = std::make_shared<StateEventHandler>();
+    }
+    stateEventHandler->setEnterStateCallback(std::move(callback));
+  }
+
+  // 设置状态进入回调 - 类成员函数版本
+  template<typename T>
+  void setEnterStateCallback(T* instance, void (T::*method)(const std::vector<State>&)) {
+    if (!stateEventHandler) {
+      stateEventHandler = std::make_shared<StateEventHandler>();
+    }
+    stateEventHandler->setEnterStateCallback(instance, method);
+  }
+
+  // 设置状态退出回调 - 函数对象版本
+  void setExitStateCallback(StateEventHandler::ExitStateCallback callback) {
+    if (!stateEventHandler) {
+      stateEventHandler = std::make_shared<StateEventHandler>();
+    }
+    stateEventHandler->setExitStateCallback(std::move(callback));
+  }
+
+  // 设置状态退出回调 - 类成员函数版本
+  template<typename T>
+  void setExitStateCallback(T* instance, void (T::*method)(const std::vector<State>&)) {
+    if (!stateEventHandler) {
+      stateEventHandler = std::make_shared<StateEventHandler>();
+    }
+    stateEventHandler->setExitStateCallback(instance, method);
+  }
+
+  // 设置事件回收回调 - 函数对象版本
+  void setPostEventCallback(StateEventHandler::PostEventCallback callback) {
+    if (!stateEventHandler) {
+      stateEventHandler = std::make_shared<StateEventHandler>();
+    }
+    stateEventHandler->setPostEventCallback(std::move(callback));
+  }
+
+  // 设置事件回收回调 - 类成员函数版本
+  template<typename T>
+  void setPostEventCallback(T* instance, void (T::*method)(const Event&, bool)) {
+    if (!stateEventHandler) {
+      stateEventHandler = std::make_shared<StateEventHandler>();
+    }
+    stateEventHandler->setPostEventCallback(instance, method);
+  }
+
+  // 继续支持原有的接口，但现在作为兼容层
+  void setStateEventHandler(std::shared_ptr<StateEventHandler> handler) {
+    stateEventHandler = handler;
   }
 
   // 添加状态
@@ -286,60 +485,108 @@ class FiniteStateMachine {
 
   // 处理单个事件
   void processEvent(const Event& event) {
-    std::lock_guard<std::mutex> lock(stateMutex);
-    State state = currentState;
-    while (!state.empty()) {
-      auto key = std::make_pair(state, event);
-      if (eventTransitions.find(key) != eventTransitions.end()) {
-        const auto& rule = eventTransitions[key];
-        if (checkConditions(rule.conditions, rule.conditionsOperator)) {
-          if (transitionHandler) {
+    bool eventHandled = false;
+    {
+      std::lock_guard<std::mutex> lock(stateMutex);
+      State state = currentState;
+
+      // 事件预处理
+      if (stateEventHandler && !stateEventHandler->onPreEvent(currentState, event)) {
+        // 事件被拒绝处理
+        if (stateEventHandler) {
+          stateEventHandler->onPostEvent(event, false);
+        }
+        return;
+      }
+
+      while (!state.empty()) {
+        auto key = std::make_pair(state, event);
+        if (eventTransitions.find(key) != eventTransitions.end()) {
+          const auto& rule = eventTransitions[key];
+          if (checkConditions(rule.conditions, rule.conditionsOperator)) {
             // 获取起始状态和目标状态的完整层次结构
             std::vector<State> fromStates = getStateHierarchy(currentState);
             std::vector<State> toStates = getStateHierarchy(rule.to);
-            transitionHandler->onTransition(fromStates, event, toStates);
-          }
-          currentState = rule.to;
 
-          // 打印转换信息和满足的条件
-          std::cout << "Transition: " << state << " -> " << currentState << " on event " << event
-                    << std::endl;
-          printSatisfiedConditions(rule.conditions);
-          return;
+            // 调用状态退出处理
+            if (stateEventHandler) {
+              stateEventHandler->onExitState(fromStates);
+            }
+
+            // 执行状态转换
+            if (stateEventHandler) {
+              stateEventHandler->onTransition(fromStates, event, toStates);
+            }
+
+            State prevState = currentState;
+            currentState = rule.to;
+
+            // 调用状态进入处理
+            if (stateEventHandler) {
+              stateEventHandler->onEnterState(toStates);
+            }
+
+            // 打印转换信息和满足的条件
+            std::cout << "Transition: " << state << " -> " << currentState << " on event " << event
+                      << std::endl;
+            printSatisfiedConditions(rule.conditions);
+
+            eventHandled = true;
+            break;
+          }
         }
+        state = states[state].parent;
       }
-      state = states[state].parent;
+    }
+
+    // 事件回收处理
+    if (stateEventHandler) {
+      stateEventHandler->onPostEvent(event, eventHandled);
     }
   }
 
   // 检查条件触发规则
   void checkConditionTransitions() {
-    std::lock_guard<std::mutex> lock(stateMutex);
-    // 检查当前状态及其父状态的转移规则
-    State state = currentState;
-    while (!state.empty()) {
-      if (conditionTransitions.find(state) != conditionTransitions.end()) {
-        for (const auto& rule : conditionTransitions[state]) {
-          // 检查条件是否满足
-          if (checkConditions(rule.conditions, rule.conditionsOperator)) {
-            // 调用状态转移处理器的回调函数
-            if (transitionHandler) {
+    {
+      std::lock_guard<std::mutex> lock(stateMutex);
+      // 检查当前状态及其父状态的转移规则
+      State state = currentState;
+      while (!state.empty()) {
+        if (conditionTransitions.find(state) != conditionTransitions.end()) {
+          for (const auto& rule : conditionTransitions[state]) {
+            // 检查条件是否满足
+            if (checkConditions(rule.conditions, rule.conditionsOperator)) {
               // 获取起始状态和目标状态的完整层次结构
               std::vector<State> fromStates = getStateHierarchy(currentState);
               std::vector<State> toStates = getStateHierarchy(rule.to);
-              transitionHandler->onTransition(fromStates, "", toStates);
-            }
-            currentState = rule.to;
 
-            // 打印转换信息和满足的条件
-            std::cout << "Condition-based transition: " << state << " -> " << currentState
-                      << std::endl;
-            printSatisfiedConditions(rule.conditions);
-            return;  // 一次只触发一个转移
+              // 调用状态退出处理
+              if (stateEventHandler) {
+                stateEventHandler->onExitState(fromStates);
+              }
+
+              // 调用状态转移处理器的回调函数
+              if (stateEventHandler) {
+                stateEventHandler->onTransition(fromStates, "", toStates);
+              }
+
+              currentState = rule.to;
+
+              // 调用状态进入处理
+              if (stateEventHandler) {
+                stateEventHandler->onEnterState(toStates);
+              }
+
+              // 打印转换信息和满足的条件
+              std::cout << "Condition-based transition: " << state << " -> " << currentState
+                        << std::endl;
+              printSatisfiedConditions(rule.conditions);
+              return;  // 一次只触发一个转移
+            }
           }
         }
+        state = states[state].parent;
       }
-      state = states[state].parent;
     }
   }
 
@@ -458,7 +705,7 @@ class FiniteStateMachine {
   std::unordered_map<std::string, int> conditionValues;
 
   // 状态转移处理器
-  std::shared_ptr<TransitionHandler> transitionHandler;
+  std::shared_ptr<StateEventHandler> stateEventHandler;
 
   // 新增成员变量
   bool running;
@@ -483,25 +730,108 @@ class FiniteStateMachine {
   std::condition_variable timerCV;
 };
 
-// 用户自定义的状态转移处理器
-class LightTransitionHandler : public TransitionHandler {
- public:
-  void onTransition(const std::vector<State>& fromStates, const Event& event,
-                    const std::vector<State>& toStates) override {
-    (void)event;  // 防止未使用的警告
+// 创建一个演示如何使用类成员函数作为回调的示例类
+class LightController {
+public:
+  LightController() : powerOn(false) {}
 
+  // 转换处理
+  void handleTransition(const std::vector<State>& fromStates, const Event& event, 
+                      const std::vector<State>& toStates) {
+    (void)event;  // 防止未使用警告
+    
     // 获取当前状态（层次结构中的第一个）
     State from = fromStates.empty() ? "" : fromStates[0];
     State to = toStates.empty() ? "" : toStates[0];
+    
+    if (from == "OFF" && to == "ON") {
+      std::cout << "Controller: Light turned ON!" << std::endl;
+      powerOn = true;
+    } else if (from == "ON" && to == "OFF") {
+      std::cout << "Controller: Light turned OFF!" << std::endl;
+      powerOn = false;
+    }
+  }
 
-    // 原有的处理逻辑，但现在可以利用完整的状态层次
+  // 事件预处理
+  bool validateEvent(const State& state, const Event& event) {
+    std::cout << "Controller: Validating event " << event << " in state " << state << std::endl;
+    // 例如，仅在灯开启时允许"ADJUST_BRIGHTNESS"事件
+    if (event == "ADJUST_BRIGHTNESS" && state != "ON") {
+      std::cout << "Controller: Cannot adjust brightness when light is off!" << std::endl;
+      return false;
+    }
+    return true;
+  }
+
+  // 状态进入
+  void onEnter(const std::vector<State>& states) {
+    if (!states.empty()) {
+      std::cout << "Controller: Entered state " << states[0] << std::endl;
+      if (states[0] == "ON") {
+        // 可以执行实际的硬件操作，如通过GPIO打开灯
+        std::cout << "Controller: Powering on hardware..." << std::endl;
+      }
+    }
+  }
+
+  // 状态退出
+  void onExit(const std::vector<State>& states) {
+    if (!states.empty()) {
+      std::cout << "Controller: Exited state " << states[0] << std::endl;
+    }
+  }
+
+  // 事件后处理
+  void afterEvent(const Event& event, bool handled) {
+    std::cout << "Controller: Processed event " << event 
+              << (handled ? " successfully" : " but it was not handled") << std::endl;
+  }
+
+  bool isPowerOn() const { return powerOn; }
+
+private:
+  bool powerOn;
+};
+
+// 更新示例函数，展示如何创建使用类成员函数的处理器
+inline std::shared_ptr<StateEventHandler> createMemberFunctionHandler() {
+  auto controller = std::make_shared<LightController>();
+  auto handler = std::make_shared<StateEventHandler>();
+  
+  // 绑定类成员函数作为回调
+  handler->setTransitionCallback(controller.get(), &LightController::handleTransition);
+  handler->setPreEventCallback(controller.get(), &LightController::validateEvent);
+  handler->setEnterStateCallback(controller.get(), &LightController::onEnter);
+  handler->setExitStateCallback(controller.get(), &LightController::onExit);
+  handler->setPostEventCallback(controller.get(), &LightController::afterEvent);
+  
+  // 注意：这里我们返回了处理器，但要确保controller对象的生命周期必须超过处理器的使用时间
+  // 在实际应用中，可能需要让控制器对象的所有权与处理器或状态机的生命周期绑定
+  return handler;
+}
+
+// 创建一个配置灯光状态处理逻辑的示例函数
+inline std::shared_ptr<StateEventHandler> createLightStateHandler() {
+  auto handler = std::make_shared<StateEventHandler>();
+  
+  // 设置转换回调
+  handler->setTransitionCallback([](const std::vector<State>& fromStates, const Event& event, 
+                                    const std::vector<State>& toStates) {
+    (void)event;  // 防止未使用警告
+    
+    // 获取当前状态（层次结构中的第一个）
+    State from = fromStates.empty() ? "" : fromStates[0];
+    State to = toStates.empty() ? "" : toStates[0];
+    
+    // 处理逻辑
     if (from == "OFF" && to == "ACTIVE") {
       std::cout << "Light turned ON and is ACTIVE!" << std::endl;
     } else if (from == "ON" && to == "OFF") {
       std::cout << "Light turned OFF!" << std::endl;
     }
-
-    // 打印完整的状态层次结构信息（可选）
+    
+    // 打印状态层次
     std::cout << "Complete transition: ";
     for (const auto& s : fromStates) {
       std::cout << s << " ";
@@ -511,5 +841,45 @@ class LightTransitionHandler : public TransitionHandler {
       std::cout << s << " ";
     }
     std::cout << std::endl;
-  }
-};
+  });
+  
+  // 设置事件预处理回调
+  handler->setPreEventCallback([](const State& currentState, const Event& event) {
+    std::cout << "Pre-processing event: " << event << " in state: " << currentState << std::endl;
+    if (event == "unsupported_event") {
+      std::cout << "Rejecting unsupported event!" << std::endl;
+      return false;
+    }
+    return true;
+  });
+  
+  // 设置状态进入回调
+  handler->setEnterStateCallback([](const std::vector<State>& states) {
+    if (states.empty()) return;
+    
+    std::cout << "Entering state: " << states[0] << std::endl;
+    if (states[0] == "ON") {
+      std::cout << "Turning ON the light!" << std::endl;
+    } else if (states[0] == "OFF") {
+      std::cout << "Light is now OFF!" << std::endl;
+    }
+  });
+  
+  // 设置状态退出回调
+  handler->setExitStateCallback([](const std::vector<State>& states) {
+    if (states.empty()) return;
+    
+    std::cout << "Exiting state: " << states[0] << std::endl;
+    if (states[0] == "ON") {
+      std::cout << "Preparing to turn OFF the light..." << std::endl;
+    }
+  });
+  
+  // 设置事件回收回调
+  handler->setPostEventCallback([](const Event& event, bool handled) {
+    std::cout << "Post-processing event: " << event
+              << (handled ? " (handled)" : " (not handled)") << std::endl;
+  });
+  
+  return handler;
+}
