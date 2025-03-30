@@ -1,4 +1,3 @@
-
 # Finite State Machine (FSM) Library
 
 This is a C++ implementation of a **Finite State Machine (FSM)** that supports event-driven and condition-based state transitions. The library is designed to be flexible, extensible, and easy to use, making it suitable for applications such as IoT device control, game state management, and workflow engines.
@@ -51,9 +50,11 @@ This is a C++ implementation of a **Finite State Machine (FSM)** that supports e
     ```cpp
     class TransitionHandler {
     public:
-      virtual void onTransition(const State& from, const Event& event, const State& to) = 0;
+      virtual void onTransition(const std::vector<State>& fromStates, const Event& event, const std::vector<State>& toStates) = 0;
     };
     ```
+  - Receives complete state hierarchies (from child to parent) rather than single states
+  - Enables handling transitions with knowledge of the entire state context
 
 6. **FiniteStateMachine Class**
   - Core class for managing the state machine:
@@ -103,12 +104,28 @@ Create a class that inherits from `TransitionHandler` to define custom logic for
 ```cpp
 class LightTransitionHandler : public TransitionHandler {
 public:
-   void onTransition(const State& from, const Event& event, const State& to) override {
+   void onTransition(const std::vector<State>& fromStates, const Event& event, const std::vector<State>& toStates) override {
+      // 获取当前状态（层次结构中的第一个）
+      State from = fromStates.empty() ? "" : fromStates[0];
+      State to = toStates.empty() ? "" : toStates[0];
+
+      // 基本状态转换逻辑
       if (from == "OFF" && to == "ACTIVE") {
         std::cout << "Light turned ON and is ACTIVE!" << std::endl;
       } else if (from == "ON" && to == "OFF") {
         std::cout << "Light turned OFF!" << std::endl;
       }
+
+      // 打印完整的状态层次结构信息
+      std::cout << "Complete transition: ";
+      for (const auto& s : fromStates) {
+        std::cout << s << " ";
+      }
+      std::cout << "-> ";
+      for (const auto& s : toStates) {
+        std::cout << s << " ";
+      }
+      std::cout << std::endl;
    }
 };
 ```
@@ -157,6 +174,7 @@ int main() {
 - **State Management**
   - `State getCurrentState() const`: Get the current state.
   - `void setInitialState(const State& state)`: Set the initial state.
+  - `std::vector<State> getStateHierarchy(const State& state) const`: Get state and all its parents.
 
 - **Transition Handler**
   - `void setTransitionHandler(std::shared_ptr<TransitionHandler> handler)`: Set a custom transition handler.
@@ -229,10 +247,16 @@ graph TD
   L --> Q
   O --> L
   
-  Q --> R[Invoke Transition Callback]
-  R --> S[Update Current State]
+  Q --> R1[Get Complete State Hierarchies]
+  R1 --> R2[Invoke Transition Callback]
+  R2 --> S[Update Current State]
   S --> T[Output Transition Information]
+  
+  Z[Stop State Machine] --> Z1[Set running=false]
+  Z1 --> Z2[Notify All Waiting Threads]
+  Z2 --> Z3[Join All Threads]
 ```
+
 ---
 
 ## Author
