@@ -1,5 +1,6 @@
 
 file(GLOB_RECURSE SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
+list(FILTER SOURCES EXCLUDE REGEX ".*comprehensive_test\\.cpp$")
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 

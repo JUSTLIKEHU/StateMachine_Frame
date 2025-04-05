@@ -3,6 +3,7 @@
 #include <thread>
 
 #include "state_machine.h"
+#include "logger.h"  // 添加日志头文件包含
 
 // 演示如何直接使用类成员函数作为回调
 void testMemberFunctionCallbacks() {
@@ -38,7 +39,7 @@ void testMemberFunctionCallbacks() {
   fsm.stop();
   
   // 检查控制器状态
-  std::cout << "Light power state: " << (controller->isPowerOn() ? "ON" : "OFF") << std::endl;
+  SMF_LOGI("Light power state: " + std::string(controller->isPowerOn() ? "ON" : "OFF"));
   
   delete controller; // 清理资源（实际应用中使用智能指针避免手动释放）
 }
@@ -64,6 +65,9 @@ void conditionThread(FiniteStateMachine& fsm) {
 }
 
 int main() {
+  // 初始化日志系统
+  SMF_LOGGER_INIT(smf::LogLevel::INFO);
+  
   FiniteStateMachine fsm;
 
   // 选择回调设置方式
@@ -82,59 +86,58 @@ int main() {
 
   try {
     if (!fsm.Init("../../config/fsm_config.json")) {
-      std::cerr << "Failed to initialize state machine" << std::endl;
+      SMF_LOGE("Failed to initialize state machine");
       return 1;
     }
 
     if (!fsm.start()) {
-      std::cerr << "Failed to start state machine" << std::endl;
+      SMF_LOGE("Failed to start state machine");
       return 1;
     }
 
-    std::cout << "Initial state: " << fsm.getCurrentState() << std::endl;
+    SMF_LOGI("Initial state: " + fsm.getCurrentState());
 
     // Test OFF -> IDLE transition with duration
-    std::cout << "Setting is_powered=1..." << std::endl;
+    SMF_LOGI("Setting is_powered=1...");
     fsm.setConditionValue("is_powered", 1);
-    std::cout << "Current state: " << fsm.getCurrentState() << std::endl;
+    SMF_LOGI("Current state: " + fsm.getCurrentState());
 
     // 等待1100ms (比配置的1000ms多一点)
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
-    std::cout << "After waiting for duration: " << fsm.getCurrentState() << std::endl;
+    SMF_LOGI("After waiting for duration: " + fsm.getCurrentState());
 
     // Test IDLE -> STAND_BY transition
     fsm.setConditionValue("service_ready", 1);
     fsm.setConditionValue("is_connected", 1);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    std::cout << "After setting service_ready=1 and is_connected=1: " << fsm.getCurrentState()
-              << std::endl;
+    SMF_LOGI("After setting service_ready=1 and is_connected=1: " + fsm.getCurrentState());
 
     // Test STAND_BY -> ACTIVE transition
     fsm.handleEvent("START");
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    std::cout << "After START event: " << fsm.getCurrentState() << std::endl;
+    SMF_LOGI("After START event: " + fsm.getCurrentState());
 
     // Test ACTIVE -> PAUSED transition
     fsm.setConditionValue("is_paused", 1);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    std::cout << "After setting is_paused=1: " << fsm.getCurrentState() << std::endl;
+    SMF_LOGI("After setting is_paused=1: " + fsm.getCurrentState());
 
     // Test PAUSED -> ACTIVE transition
     fsm.setConditionValue("is_paused", 0);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    std::cout << "After setting is_paused=0: " << fsm.getCurrentState() << std::endl;
+    SMF_LOGI("After setting is_paused=0: " + fsm.getCurrentState());
 
     // Test ACTIVE -> STAND_BY transition
     fsm.handleEvent("USER_STOP");
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    std::cout << "After USER_STOP event: " << fsm.getCurrentState() << std::endl;
+    SMF_LOGI("After USER_STOP event: " + fsm.getCurrentState());
 
     // // Test STAND_BY -> IDLE transition
     // fsm.setConditionValue("service_ready", 0);
     // std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    // std::cout << "After setting service_ready=0: " << fsm.getCurrentState() << std::endl;
+    // SMF_LOGI("After setting service_ready=0: " + fsm.getCurrentState());
 
-    std::cout << "Final state: " << fsm.getCurrentState() << std::endl;
+    SMF_LOGI("Final state: " + fsm.getCurrentState());
 
     while (true) {
       // Keep the main thread alive to allow the worker threads to execute
@@ -142,12 +145,12 @@ int main() {
       // In a real-world application, you should use a condition variable to wait for a signal
       // from the worker threads before proceeding with any other
       std::this_thread::sleep_for(std::chrono::seconds(1));
-      std::cout << "Current state: " << fsm.getCurrentState() << std::endl;
+      SMF_LOGI("Current state: " + fsm.getCurrentState());
     }
 
     fsm.stop();
   } catch (const std::exception& e) {
-    std::cerr << "Error: " << e.what() << std::endl;
+    SMF_LOGE("Error: " + std::string(e.what()));
   }
 
   return 0;

@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "nlohmann-json/json.hpp"  // 引入 nlohmann/json 库
+#include "logger.h"  // 添加日志头文件
 
 using json = nlohmann::json;
 
@@ -206,7 +207,7 @@ class FiniteStateMachine {
       initialized = true;
       return true;
     } catch (const std::exception& e) {
-      std::cerr << "Initialization failed: " << e.what() << std::endl;
+      SMF_LOGE("Initialization failed: " + std::string(e.what()));
       return false;
     }
   }
@@ -214,12 +215,12 @@ class FiniteStateMachine {
   // 启动状态机
   bool start() {
     if (!initialized) {
-      std::cerr << "State machine not initialized!" << std::endl;
+      SMF_LOGE("State machine not initialized!");
       return false;
     }
 
     if (running) {
-      std::cerr << "State machine already running!" << std::endl;
+      SMF_LOGW("State machine already running!");
       return false;
     }
 
@@ -526,9 +527,7 @@ class FiniteStateMachine {
               stateEventHandler->onEnterState(toStates);
             }
 
-            // 打印转换信息和满足的条件
-            std::cout << "Transition: " << state << " -> " << currentState << " on event " << event
-                      << std::endl;
+            SMF_LOGI("Transition: " + state + " -> " + currentState + " on event " + event);
             printSatisfiedConditions(rule.conditions);
 
             eventHandled = true;
@@ -577,9 +576,7 @@ class FiniteStateMachine {
                 stateEventHandler->onEnterState(toStates);
               }
 
-              // 打印转换信息和满足的条件
-              std::cout << "Condition-based transition: " << state << " -> " << currentState
-                        << std::endl;
+              SMF_LOGI("Condition-based transition: " + state + " -> " + currentState);
               printSatisfiedConditions(rule.conditions);
               return;  // 一次只触发一个转移
             }
@@ -594,13 +591,13 @@ class FiniteStateMachine {
   void printSatisfiedConditions(const std::vector<Condition>& conditions) {
     std::lock_guard<std::mutex> lock(conditionMutex);
     if (!conditions.empty()) {
-      std::cout << "Satisfied conditions:" << std::endl;
+      SMF_LOGD("Satisfied conditions:");
       for (const auto& cond : conditions) {
         int value = conditionValues[cond.name];
         if (value >= cond.range.first && value <= cond.range.second) {
-          std::cout << "  - " << cond.name << " = " << value << " (range: [" << cond.range.first
-                    << ", " << cond.range.second << "],duration: " << cond.duration << ")"
-                    << std::endl;
+          SMF_LOGD("  - " + cond.name + " = " + std::to_string(value) + " (range: [" + 
+                  std::to_string(cond.range.first) + ", " + std::to_string(cond.range.second) + 
+                  "],duration: " + std::to_string(cond.duration) + ")");
         }
       }
     }
@@ -679,7 +676,7 @@ class FiniteStateMachine {
       auto now = std::chrono::steady_clock::now();
       if (now >= timerQueue.top().expiryTime) {
         auto expiredCondition = timerQueue.top();
-        std::cout << "Duration condition expired: " << expiredCondition.name << std::endl;
+        SMF_LOGD("Duration condition expired: " + expiredCondition.name);
         timerQueue.pop();
         // 触发条件检查
         eventCV.notify_one();
@@ -745,20 +742,20 @@ public:
     State to = toStates.empty() ? "" : toStates[0];
     
     if (from == "OFF" && to == "ON") {
-      std::cout << "Controller: Light turned ON!" << std::endl;
+      SMF_LOGI("Controller: Light turned ON!");
       powerOn = true;
     } else if (from == "ON" && to == "OFF") {
-      std::cout << "Controller: Light turned OFF!" << std::endl;
+      SMF_LOGI("Controller: Light turned OFF!");
       powerOn = false;
     }
   }
 
   // 事件预处理
   bool validateEvent(const State& state, const Event& event) {
-    std::cout << "Controller: Validating event " << event << " in state " << state << std::endl;
+    SMF_LOGD("Controller: Validating event " + event + " in state " + state);
     // 例如，仅在灯开启时允许"ADJUST_BRIGHTNESS"事件
     if (event == "ADJUST_BRIGHTNESS" && state != "ON") {
-      std::cout << "Controller: Cannot adjust brightness when light is off!" << std::endl;
+      SMF_LOGW("Controller: Cannot adjust brightness when light is off!");
       return false;
     }
     return true;
@@ -767,10 +764,10 @@ public:
   // 状态进入
   void onEnter(const std::vector<State>& states) {
     if (!states.empty()) {
-      std::cout << "Controller: Entered state " << states[0] << std::endl;
+      SMF_LOGD("Controller: Entered state " + states[0]);
       if (states[0] == "ON") {
         // 可以执行实际的硬件操作，如通过GPIO打开灯
-        std::cout << "Controller: Powering on hardware..." << std::endl;
+        SMF_LOGI("Controller: Powering on hardware...");
       }
     }
   }
@@ -778,14 +775,14 @@ public:
   // 状态退出
   void onExit(const std::vector<State>& states) {
     if (!states.empty()) {
-      std::cout << "Controller: Exited state " << states[0] << std::endl;
+      SMF_LOGD("Controller: Exited state " + states[0]);
     }
   }
 
   // 事件后处理
   void afterEvent(const Event& event, bool handled) {
-    std::cout << "Controller: Processed event " << event 
-              << (handled ? " successfully" : " but it was not handled") << std::endl;
+    SMF_LOGD("Controller: Processed event " + event + 
+              (handled ? " successfully" : " but it was not handled"));
   }
 
   bool isPowerOn() const { return powerOn; }
@@ -826,28 +823,28 @@ inline std::shared_ptr<StateEventHandler> createLightStateHandler() {
     
     // 处理逻辑
     if (from == "OFF" && to == "ACTIVE") {
-      std::cout << "Light turned ON and is ACTIVE!" << std::endl;
+      SMF_LOGI("Light turned ON and is ACTIVE!");
     } else if (from == "ON" && to == "OFF") {
-      std::cout << "Light turned OFF!" << std::endl;
+      SMF_LOGI("Light turned OFF!");
     }
     
     // 打印状态层次
-    std::cout << "Complete transition: ";
+    std::string transition = "Complete transition: ";
     for (const auto& s : fromStates) {
-      std::cout << s << " ";
+      transition += s + " ";
     }
-    std::cout << "-> ";
+    transition += "-> ";
     for (const auto& s : toStates) {
-      std::cout << s << " ";
+      transition += s + " ";
     }
-    std::cout << std::endl;
+    SMF_LOGD(transition);
   });
   
   // 设置事件预处理回调
   handler->setPreEventCallback([](const State& currentState, const Event& event) {
-    std::cout << "Pre-processing event: " << event << " in state: " << currentState << std::endl;
+    SMF_LOGD("Pre-processing event: " + event + " in state: " + currentState);
     if (event == "unsupported_event") {
-      std::cout << "Rejecting unsupported event!" << std::endl;
+      SMF_LOGW("Rejecting unsupported event!");
       return false;
     }
     return true;
@@ -857,11 +854,11 @@ inline std::shared_ptr<StateEventHandler> createLightStateHandler() {
   handler->setEnterStateCallback([](const std::vector<State>& states) {
     if (states.empty()) return;
     
-    std::cout << "Entering state: " << states[0] << std::endl;
+    SMF_LOGD("Entering state: " + states[0]);
     if (states[0] == "ON") {
-      std::cout << "Turning ON the light!" << std::endl;
+      SMF_LOGI("Turning ON the light!");
     } else if (states[0] == "OFF") {
-      std::cout << "Light is now OFF!" << std::endl;
+      SMF_LOGI("Light is now OFF!");
     }
   });
   
@@ -869,16 +866,16 @@ inline std::shared_ptr<StateEventHandler> createLightStateHandler() {
   handler->setExitStateCallback([](const std::vector<State>& states) {
     if (states.empty()) return;
     
-    std::cout << "Exiting state: " << states[0] << std::endl;
+    SMF_LOGD("Exiting state: " + states[0]);
     if (states[0] == "ON") {
-      std::cout << "Preparing to turn OFF the light..." << std::endl;
+      SMF_LOGI("Preparing to turn OFF the light...");
     }
   });
   
   // 设置事件回收回调
   handler->setPostEventCallback([](const Event& event, bool handled) {
-    std::cout << "Post-processing event: " << event
-              << (handled ? " (handled)" : " (not handled)") << std::endl;
+    SMF_LOGD("Post-processing event: " + event +
+              (handled ? " (handled)" : " (not handled)"));
   });
   
   return handler;
