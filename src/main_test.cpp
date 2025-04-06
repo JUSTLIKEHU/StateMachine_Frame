@@ -66,7 +66,7 @@ void conditionThread(FiniteStateMachine& fsm) {
 
 int main() {
   // 初始化日志系统
-  SMF_LOGGER_INIT(smf::LogLevel::INFO);
+  SMF_LOGGER_INIT(smf::LogLevel::DEBUG);
   
   FiniteStateMachine fsm;
 
@@ -98,6 +98,19 @@ int main() {
     SMF_LOGI("Initial state: " + fsm.getCurrentState());
 
     // Test OFF -> IDLE transition with duration
+    // while (true) {
+    //   static int count = 0;
+    //   if (++count % 2 == 1) {
+    //     fsm.setConditionValue("is_powered", 1);
+    //     SMF_LOGI("Setting is_powered=1...");
+    //     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+    //   } else {
+    //     fsm.setConditionValue("is_powered", 0);
+    //     SMF_LOGI("Setting is_powered=0...");
+    //     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+    //   }
+    //   SMF_LOGE("Current state: " + fsm.getCurrentState());
+    // }
     SMF_LOGI("Setting is_powered=1...");
     fsm.setConditionValue("is_powered", 1);
     SMF_LOGI("Current state: " + fsm.getCurrentState());
