@@ -64,6 +64,7 @@ struct ConditionUpdateEvent {
 // 在ConditionUpdateEvent结构体后添加定时条件结构体
 struct DurationCondition {
   std::string name;
+  int value;  // 添加值字段，用于跟踪触发条件时的值
   std::chrono::steady_clock::time_point expiryTime;
 };
 
@@ -621,12 +622,38 @@ class FiniteStateMachine {
       bool valueInRange = (value >= cond.range.first && value <= cond.range.second);
 
       // 检查持续时间
-      if (cond.duration > 0 && conditionLastUpdate.find(cond.name) != conditionLastUpdate.end()) {
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                           now - conditionLastUpdate[cond.name])
-                           .count();
-        bool durationMet = (elapsed >= cond.duration);
-        valueInRange = valueInRange && durationMet;
+      if (cond.duration > 0) {
+        // 如果当前值在范围内，检查是否已经触发过持续条件
+        if (valueInRange) {
+          // 检查是否在已触发的持续条件中
+          auto it = triggeredDurationConditions.find(cond.name);
+          if (it != triggeredDurationConditions.end() && it->second == value) {
+            // 此持续条件已经满足并触发过，无需再次等待
+            continue;
+          }
+          
+          // 否则需要检查计时器
+          if (conditionLastUpdate.find(cond.name) != conditionLastUpdate.end()) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             now - conditionLastUpdate[cond.name])
+                             .count();
+            bool durationMet = (elapsed >= cond.duration);
+            
+            // 只有时间条件满足时才算此条件满足
+            valueInRange = durationMet;
+            
+            // 如果时间条件满足，记录此条件已触发
+            if (durationMet) {
+              triggeredDurationConditions[cond.name] = value;
+            }
+          } else {
+            // 如果没有更新记录，设置为不满足
+            valueInRange = false;
+          }
+        } else {
+          // 当值不在范围内时，清除已触发记录
+          triggeredDurationConditions.erase(cond.name);
+        }
       }
 
       if (op == "AND" && !valueInRange) {
@@ -644,21 +671,28 @@ class FiniteStateMachine {
     std::lock_guard<std::mutex> lock(conditionMutex);
     while (!conditionQueue.empty()) {
       const auto& update = conditionQueue.front();
+      int oldValue = conditionValues[update.name];
       conditionValues[update.name] = update.value;
-      conditionLastUpdate[update.name] = update.updateTime;
-
-      // 检查是否有持续时间要求的条件
-      auto it =
-          std::find_if(allConditions.begin(), allConditions.end(), [&](const Condition& cond) {
-            return cond.name == update.name && cond.duration > 0 &&
-                   (update.value >= cond.range.first && update.value <= cond.range.second);
-          });
-
-      if (it != allConditions.end()) {
-        std::lock_guard<std::mutex> timerLock(timerMutex);
-        auto expiryTime = update.updateTime + std::chrono::milliseconds(it->duration);
-        timerQueue.push({update.name, expiryTime});
-        timerCV.notify_one();
+      
+      // 只有当值改变时才更新时间戳
+      if (oldValue != update.value) {
+        conditionLastUpdate[update.name] = update.updateTime;
+        // 如果之前有触发记录且值改变，清除触发记录
+        if (triggeredDurationConditions.find(update.name) != triggeredDurationConditions.end()) {
+          triggeredDurationConditions.erase(update.name);
+        }
+        
+        // 检查是否有持续时间要求的条件
+        for (const auto& cond : allConditions) {
+          if (cond.name == update.name && cond.duration > 0 &&
+              (update.value >= cond.range.first && update.value <= cond.range.second)) {
+            std::lock_guard<std::mutex> timerLock(timerMutex);
+            auto expiryTime = update.updateTime + std::chrono::milliseconds(cond.duration);
+            timerQueue.push({update.name, update.value, expiryTime});
+            timerCV.notify_one();
+            break; // 一个条件名只添加一个定时器
+          }
+        }
       }
       conditionQueue.pop();
     }
@@ -672,14 +706,25 @@ class FiniteStateMachine {
         timerCV.wait(lock, [this] { return !running || !timerQueue.empty(); });
         continue;
       }
-
       auto now = std::chrono::steady_clock::now();
       if (now >= timerQueue.top().expiryTime) {
         auto expiredCondition = timerQueue.top();
-        SMF_LOGD("Duration condition expired: " + expiredCondition.name);
         timerQueue.pop();
-        // 触发条件检查
-        eventCV.notify_one();
+        SMF_LOGD("Duration condition expired: " + expiredCondition.name + 
+                " with value " + std::to_string(expiredCondition.value));
+        // 检查当前条件值是否仍然匹配触发时的值
+        {
+          std::lock_guard<std::mutex> condLock(conditionMutex);
+          if (conditionValues.find(expiredCondition.name) != conditionValues.end() &&
+              conditionValues[expiredCondition.name] == expiredCondition.value) {
+            // 记录此条件已触发
+            triggeredDurationConditions[expiredCondition.name] = expiredCondition.value;
+            SMF_LOGI("Duration condition triggered: " + expiredCondition.name + 
+                    " with value " + std::to_string(expiredCondition.value));
+            // 触发条件检查
+            eventCV.notify_one();
+          }
+        }
       } else {
         timerCV.wait_until(lock, timerQueue.top().expiryTime);
       }
@@ -725,6 +770,7 @@ class FiniteStateMachine {
       }};
   std::mutex timerMutex;
   std::condition_variable timerCV;
+  std::unordered_map<std::string, int> triggeredDurationConditions; // 记录已触发的持续条件
 };
 
 // 创建一个演示如何使用类成员函数作为回调的示例类
