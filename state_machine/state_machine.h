@@ -1,8 +1,37 @@
 /**
  * @file state_machine.h
  * @brief State machine class definition
+ * @author xiaokui.hu
  * @date 2025-01-26
+ * @details This file contains the definition of the FiniteStateMachine class, which implements a finite state machine.
+  * The state machine supports state transitions based on events and conditions, and allows for nested states.
+  * The state machine can be configured using a JSON file, and supports callbacks for state transitions, event handling, and condition updates.
+  * The state machine is thread-safe and can be used in a multi-threaded environment.
  **/
+
+/**
+ * MIT License
+ *
+ * Copyright (c) 2025 xiaokui.hu
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 
 #pragma once
 
@@ -23,6 +52,8 @@
 
 #include "nlohmann-json/json.hpp"  // 引入 nlohmann/json 库
 #include "logger.h"  // 添加日志头文件
+
+namespace smf {
 
 using json = nlohmann::json;
 
@@ -931,3 +962,5 @@ inline std::shared_ptr<StateEventHandler> createLightStateHandler() {
   
   return handler;
 }
+
+} // namespace smf

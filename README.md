@@ -15,8 +15,36 @@ This is a C++ implementation of a **Finite State Machine (FSM)** that supports e
 - **Time-Based Conditions**: Support for conditions that require a specific duration to be met.
 - **Flexible Callback Mechanism**: Support for lambda functions and class member functions as callbacks.
 - **Complete State Hierarchy**: Provide complete state hierarchy information in callbacks.
+- **Integrated Logging System**: A thread-safe logging system with multiple log levels.
 
 ---
+
+## Project Structure
+
+```
+StateMachine_Frame/
+├── build.sh                  # Build script
+├── CMakeLists.txt            # Main CMake configuration file
+├── config/                   # Configuration examples
+│   └── fsm_config.json       # Example FSM configuration
+├── LICENSE                   # MIT License
+├── README.md                 # English documentation
+├── README_CN.md              # Chinese documentation
+├── run_test.sh               # Script to run tests
+├── state_machine/            # Core library implementation
+│   ├── logger.h              # Logger implementation
+│   └── state_machine.h       # Main FSM implementation
+├── test/                     # Test files
+│   ├── CMakeLists.txt        # Test build configuration
+│   ├── comprehensive_test/   # Comprehensive tests
+│   │   └── comprehensive_test.cpp  # Smart home system test example
+│   └── main_test/            # Basic tests
+│       └── main_test.cpp     # Basic functionality test
+└── third_party/              # External dependencies
+    └── nlohmann-json/        # JSON library
+        ├── json_fwd.hpp
+        └── json.hpp
+```
 
 ## Code Structure
 
@@ -131,6 +159,23 @@ This is a C++ implementation of a **Finite State Machine (FSM)** that supports e
     - Event Handling: Process events asynchronously.
     - Condition Handling: Update and check conditions.
     - State Transitions: Trigger transitions based on events or conditions.
+
+9. **Logger Class**
+  ```cpp
+  class Logger {
+  public:
+    static Logger& getInstance();
+    void setLogLevel(LogLevel level);
+    LogLevel getLogLevel() const;
+    void log(LogLevel level, const std::string& file, int line, const std::string& message);
+  private:
+    Logger();
+    // Thread-safe implementation with mutex
+  };
+  ```
+  - Thread-safe singleton logger with support for multiple log levels
+  - Includes file, line number, and timestamp information
+  - Provides convenient macros for different log levels
 
 ---
 
@@ -261,6 +306,51 @@ int main() {
 }
 ```
 
+### 4. Configure and Use the Logger
+```cpp
+// Initialize the logger with desired log level
+SMF_LOGGER_INIT(smf::LogLevel::INFO);
+
+// Log messages of different levels
+SMF_LOGD("This is a debug message");
+SMF_LOGI("This is an info message");
+SMF_LOGW("This is a warning message");
+SMF_LOGE("This is an error message");
+```
+
+---
+
+## Testing
+
+The project includes two test examples that can be run using the provided script:
+
+### Running Tests with Script
+```bash
+# Run basic test
+./run_test.sh main
+
+# Run comprehensive test
+./run_test.sh comp
+
+# Run all tests
+./run_test.sh all
+```
+
+### Basic Test
+A simple test that demonstrates basic state machine functionality, including:
+- Basic state transitions
+- Event handling
+- Simple callback execution
+
+### Comprehensive Test
+A more complex example that simulates a smart home system with multiple states, events and transitions:
+- Hierarchical state management
+- Event-driven transitions
+- Condition-based transitions with timing constraints
+- Complete callback handling
+- Smart home controller implementation
+- Error handling and logging
+
 ---
 
 ## API Reference
@@ -338,6 +428,24 @@ int main() {
 - `void onEnterState(const std::vector<State>& states)`: Handle state entry
 - `void onExitState(const std::vector<State>& states)`: Handle state exit
 - `void onPostEvent(const Event& event, bool handled)`: Handle event post-processing
+
+### Logger Class
+
+#### Enums
+- `enum class LogLevel { DEBUG, INFO, WARN, ERROR }`: Log levels from least to most severe
+
+#### Public Methods
+- `static Logger& getInstance()`: Get the singleton logger instance
+- `void setLogLevel(LogLevel level)`: Set the minimum log level to display
+- `LogLevel getLogLevel() const`: Get the current minimum log level
+- `void log(LogLevel level, const std::string& file, int line, const std::string& message)`: Log a message
+
+#### Logging Macros
+- `SMF_LOGGER_INIT(level)`: Initialize the logger with a specific log level
+- `SMF_LOGD(message)`: Log a debug message
+- `SMF_LOGI(message)`: Log an info message
+- `SMF_LOGW(message)`: Log a warning message
+- `SMF_LOGE(message)`: Log an error message
 
 ---
 
@@ -434,7 +542,36 @@ This design ensures efficient concurrent processing while avoiding complex race 
 
 - **nlohmann/json**: A modern C++ JSON library for parsing and generating JSON data.
   - GitHub: [nlohmann/json](https://github.com/nlohmann/json)
-- **logger**: Provides logging functionality support.
+- **logger**: Integrated thread-safe logging system included in the library.
+
+---
+
+## Build Instructions
+
+### Prerequisites
+- C++17 compatible compiler
+- CMake 3.10 or higher
+- pthread library
+
+### Build Steps
+```bash
+# Clone the repository
+git clone https://github.com/JUSTLIKEHU/StateMachine_Frame.git
+cd StateMachine_Frame
+
+# Build using script (recommended)
+./build.sh
+
+# Or build manually
+mkdir -p build && cd build
+cmake ..
+make
+
+# Run tests
+cd bin
+./main_test
+./comprehensive_test
+```
 
 ---
 

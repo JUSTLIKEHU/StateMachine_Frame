@@ -15,8 +15,36 @@
 - **基于时间的条件**：支持需要满足特定持续时间的条件。
 - **灵活的回调机制**：支持lambda函数和类成员函数作为回调。
 - **完整的状态层次结构**：在回调中提供完整的状态层次信息。
+- **集成日志系统**：具有多种日志级别的线程安全日志系统。
 
 ---
+
+## 项目结构
+
+```
+StateMachine_Frame/
+├── build.sh                  # 构建脚本
+├── CMakeLists.txt            # 主CMake配置文件
+├── config/                   # 配置示例
+│   └── fsm_config.json       # FSM配置示例
+├── LICENSE                   # MIT许可证
+├── README.md                 # 英文文档
+├── README_CN.md              # 中文文档
+├── run_test.sh               # 运行测试脚本
+├── state_machine/            # 核心库实现
+│   ├── logger.h              # 日志实现
+│   └── state_machine.h       # 主FSM实现
+├── test/                     # 测试文件
+│   ├── CMakeLists.txt        # 测试构建配置
+│   ├── comprehensive_test/   # 全面测试
+│   │   └── comprehensive_test.cpp  # 智能家居系统测试示例
+│   └── main_test/            # 基本测试
+│       └── main_test.cpp     # 基本功能测试
+└── third_party/              # 外部依赖
+    └── nlohmann-json/        # JSON库
+        ├── json_fwd.hpp
+        └── json.hpp
+```
 
 ## 代码结构
 
@@ -131,6 +159,23 @@
     - 事件处理：异步处理事件。
     - 条件处理：更新和检查条件。
     - 状态转换：基于事件或条件触发转换。
+
+9. **日志记录器类**
+  ```cpp
+  class Logger {
+  public:
+    static Logger& getInstance();
+    void setLogLevel(LogLevel level);
+    LogLevel getLogLevel() const;
+    void log(LogLevel level, const std::string& file, int line, const std::string& message);
+  private:
+    Logger();
+    // 线程安全实现，使用互斥锁
+  };
+  ```
+  - 线程安全的单例日志记录器，支持多种日志级别
+  - 包含文件名、行号和时间戳信息
+  - 提供便捷的日志级别宏定义
 
 ---
 
@@ -261,6 +306,51 @@ int main() {
 }
 ```
 
+### 4. 配置和使用日志系统
+```cpp
+// 使用所需的日志级别初始化日志记录器
+SMF_LOGGER_INIT(smf::LogLevel::INFO);
+
+// 记录不同级别的日志消息
+SMF_LOGD("这是一条调试信息");
+SMF_LOGI("这是一条信息");
+SMF_LOGW("这是一条警告信息");
+SMF_LOGE("这是一条错误信息");
+```
+
+---
+
+## 测试
+
+项目包含两个测试示例，可以使用提供的脚本运行：
+
+### 使用脚本运行测试
+```bash
+# 运行基本测试
+./run_test.sh main
+
+# 运行全面测试
+./run_test.sh comp
+
+# 运行所有测试
+./run_test.sh all
+```
+
+### 基本测试
+一个演示基本状态机功能的简单测试，包括：
+- 基本状态转换
+- 事件处理
+- 简单回调执行
+
+### 全面测试
+一个模拟智能家居系统，包含多种状态、事件和转换的复杂示例：
+- 层次状态管理
+- 事件驱动转换
+- 带有时间约束的基于条件的转换
+- 完整的回调处理
+- 智能家居控制器实现
+- 错误处理和日志记录
+
 ---
 
 ## API参考
@@ -338,6 +428,24 @@ int main() {
 - `void onEnterState(const std::vector<State>& states)`：处理状态进入
 - `void onExitState(const std::vector<State>& states)`：处理状态退出
 - `void onPostEvent(const Event& event, bool handled)`：处理事件回收
+
+### Logger 类
+
+#### 枚举
+- `enum class LogLevel { DEBUG, INFO, WARN, ERROR }`：日志级别，从最低到最高严重程度
+
+#### 公共方法
+- `static Logger& getInstance()`：获取日志记录器单例实例
+- `void setLogLevel(LogLevel level)`：设置要显示的最低日志级别
+- `LogLevel getLogLevel() const`：获取当前最低日志级别
+- `void log(LogLevel level, const std::string& file, int line, const std::string& message)`：记录日志消息
+
+#### 日志宏定义
+- `SMF_LOGGER_INIT(level)`：使用特定日志级别初始化日志记录器
+- `SMF_LOGD(message)`：记录调试消息
+- `SMF_LOGI(message)`：记录信息消息
+- `SMF_LOGW(message)`：记录警告消息
+- `SMF_LOGE(message)`：记录错误消息
 
 ---
 
@@ -434,7 +542,36 @@ graph TD
 
 - **nlohmann/json**：用于解析和生成JSON数据的现代C++JSON库。
   - GitHub: [nlohmann/json](https://github.com/nlohmann/json)
-- **logger**：提供日志功能支持。
+- **logger**：提供日志功能支持，集成在库中。
+
+---
+
+## 构建说明
+
+### 前提条件
+- C++17兼容编译器
+- CMake 3.10或更高版本
+- pthread库
+
+### 构建步骤
+```bash
+# 克隆仓库
+git clone https://github.com/JUSTLIKEHU/StateMachine_Frame.git
+cd StateMachine_Frame
+
+# 使用脚本构建（推荐）
+./build.sh
+
+# 或手动构建
+mkdir -p build && cd build
+cmake ..
+make
+
+# 运行测试
+cd bin
+./main_test
+./comprehensive_test
+```
 
 ---
 

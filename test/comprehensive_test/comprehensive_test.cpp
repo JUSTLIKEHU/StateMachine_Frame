@@ -30,7 +30,7 @@ public:
     }
 
     // 状态转移回调 - 添加对状态层次的理解
-    void onTransition(const std::vector<State>& fromStates, const Event& event, const std::vector<State>& toStates) {
+    void onTransition(const std::vector<smf::State>& fromStates, const smf::Event& event, const std::vector<smf::State>& toStates) {
         printStateTransition(fromStates, event, toStates);
         
         // 分析状态转换的实际意义
@@ -38,8 +38,8 @@ public:
         // bool isLeavingPower = isReallyLeaving(fromStates, toStates, "POWER_ON");
         
         // 第一个元素是最具体的状态
-        State specificFrom = fromStates.empty() ? "" : fromStates[0];
-        State specificTo = toStates.empty() ? "" : toStates[0];
+        smf::State specificFrom = fromStates.empty() ? "" : fromStates[0];
+        smf::State specificTo = toStates.empty() ? "" : toStates[0];
         
         // 处理特定状态转换的业务逻辑
         if (specificTo == "STANDBY" && specificFrom != "STANDBY") {
@@ -73,7 +73,7 @@ public:
     }
 
     // 事件预处理回调
-    bool onPreEvent(const State& currentState, const Event& event) {
+    bool onPreEvent(const smf::State& currentState, const smf::Event& event) {
         SMF_LOGI("事件检验: [" + event + "] 在状态 [" + currentState + "]");
         
         // 检查特定状态下的事件是否合法
@@ -90,7 +90,7 @@ public:
     }
 
     // 进入状态回调 - 修改为支持层次状态理解
-    void onEnterState(const std::vector<State>& states) {
+    void onEnterState(const std::vector<smf::State>& states) {
         if (states.empty()) return;
         
         std::stringstream ss;
@@ -107,7 +107,7 @@ public:
     }
 
     // 退出状态回调 - 修改为支持层次状态理解
-    void onExitState(const std::vector<State>& states) {
+    void onExitState(const std::vector<smf::State>& states) {
         if (states.empty()) return;
         
         std::stringstream ss;
@@ -128,7 +128,7 @@ public:
     }
 
     // 处理特定状态的进入逻辑
-    void handleEnterSpecificState(const State& state) {
+    void handleEnterSpecificState(const smf::State& state) {
         if (state == "ONLINE") {
             if (!networkConnected) {  // 只有在网络未连接时才设置
                 networkConnected = true;
@@ -162,7 +162,7 @@ public:
     }
 
     // 处理特定状态的退出逻辑
-    void handleExitSpecificState(const State& state) {
+    void handleExitSpecificState(const smf::State& state) {
         // 检查是否真正需要关闭某个功能
         // 这里需要了解完整的状态转换上下文
         
@@ -191,7 +191,7 @@ public:
     }
 
     // 辅助方法：检查是否真正离开了某个状态
-    bool isReallyLeaving(const std::vector<State>& fromStates, const std::vector<State>& toStates, const State& stateName) {
+    bool isReallyLeaving(const std::vector<smf::State>& fromStates, const std::vector<smf::State>& toStates, const smf::State& stateName) {
         // 检查fromStates是否包含该状态
         bool inFromStates = false;
         for (const auto& state : fromStates) {
@@ -215,7 +215,7 @@ public:
     }
 
     // 事件后处理回调
-    void onPostEvent(const Event& event, bool handled) {
+    void onPostEvent(const smf::Event& event, bool handled) {
         std::string status = handled ? "已成功处理" : "未被处理";
         SMF_LOGI("事件 [" + event + "] " + status);
                   
@@ -267,7 +267,7 @@ public:
 
 private:
     // 打印状态转换
-    void printStateTransition(const std::vector<State>& fromStates, const Event& event, const std::vector<State>& toStates) {
+    void printStateTransition(const std::vector<smf::State>& fromStates, const smf::Event& event, const std::vector<smf::State>& toStates) {
         SMF_LOGI("\n------------------------------------------");
         std::stringstream ss;
         ss << "状态转换: ";
@@ -483,7 +483,7 @@ void runComprehensiveTest() {
     }
     
     // 创建状态机
-    FiniteStateMachine fsm;
+    smf::FiniteStateMachine fsm;
     
     // 创建控制器
     auto controller = std::make_shared<SmartHomeController>();
