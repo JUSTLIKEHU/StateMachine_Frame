@@ -39,14 +39,15 @@
 
 #pragma once
 
-#include <string>
 #include <chrono>
+#include <map>
+#include <ostream>
+#include <string>
 #include <vector>
-namespace smf {
-// 定义状态和事件的类型
-using State = std::string;
-using Event = std::string;
 
+namespace smf {
+// 定义状态的类型
+using State = std::string;
 // 条件类型
 struct Condition {
   std::string name;           // 条件名称
@@ -58,7 +59,7 @@ struct Condition {
 // 状态转移规则
 struct TransitionRule {
   State from;                         // 起始状态
-  Event event;                        // 事件（可为空）
+  std::string event;                  // 事件（可为空）
   State to;                           // 目标状态
   std::vector<Condition> conditions;  // 条件列表
   std::string conditionsOperator;     // 条件运算符 ("AND" 或 "OR")

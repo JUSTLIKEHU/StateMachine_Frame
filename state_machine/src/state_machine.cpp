@@ -32,6 +32,7 @@
 
 
 #include "state_machine.h"
+#include <mutex>
 
 namespace smf {
 
@@ -152,8 +153,8 @@ void FiniteStateMachine::addTransition(const TransitionRule& rule) {
   // 如果事件为空，则使用内部事件
   if (rule.event.empty()) {
     TransitionRule ruleWithInternalEvent = rule;
-    ruleWithInternalEvent.event = INTERNAL_EVENT;
-    eventTransitions.insert({{rule.from, INTERNAL_EVENT}, ruleWithInternalEvent});
+    ruleWithInternalEvent.event = Event(INTERNAL_EVENT);
+    eventTransitions.insert({{rule.from, ruleWithInternalEvent.event}, ruleWithInternalEvent});
   } else {
     eventTransitions.insert({{rule.from, rule.event}, rule});
   }
@@ -352,7 +353,7 @@ void FiniteStateMachine::processEvent(const Event& event) {
             stateEventHandler->onEnterState(toStates);
           }
 
-          SMF_LOGI("Transition: " + state + " -> " + currentState + " on event " + event);
+          SMF_LOGI("Transition: " + state + " -> " + currentState + " on event " + event.getName());
           printSatisfiedConditions(rule.conditions);
 
           eventHandled = true;
@@ -512,7 +513,13 @@ void FiniteStateMachine::triggerEvent() {
           
           // 触发事件
           if (eventDef.trigger_mode == "edge") {
-            handleEvent(eventDef.name);
+            // 创建事件并包含所有相关条件值
+            Event newEvent(eventDef.name);
+            for (const auto& cond : eventDef.conditions) {
+              // 使用统一的setCondition接口，同时处理条件值和持续时间
+              newEvent.setCondition(cond.name, conditionValues[cond.name], cond.duration > 0 ? cond.duration : 0);
+            }
+            handleEvent(newEvent);
           }
         }
       } else {
@@ -529,14 +536,14 @@ void FiniteStateMachine::triggerEvent() {
           if (eventDef.trigger_mode == "edge") {
             // 这里可以选择触发特定的事件，例如 eventDef.name + "_RESET"
             // 或者直接触发内部事件进行状态检查
-            handleEvent(INTERNAL_EVENT);
+            handleEvent(Event(INTERNAL_EVENT));
           }
         }
       }
     }
   }
   // 所有条件更新都支持触发内部事件
-  handleEvent(INTERNAL_EVENT);
+  handleEvent(Event(INTERNAL_EVENT));
 }
 
 void FiniteStateMachine::timerLoop() {
@@ -562,6 +569,7 @@ void FiniteStateMachine::timerLoop() {
           SMF_LOGI("Duration condition triggered: " + expiredCondition.name + 
                   " with value " + std::to_string(expiredCondition.value));
           // 触发事件检查
+          std::lock_guard<std::mutex> eventLock(eventTriggerMutex);
           eventTriggerCV.notify_one();
         }
       }

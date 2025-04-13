@@ -64,7 +64,7 @@ using json = nlohmann::json;
 class FiniteStateMachine {
  public:
   // 定义内部事件常量
-  static constexpr const char* INTERNAL_EVENT = "INTERNAL_EVENT";
+  static constexpr const char* INTERNAL_EVENT = "__INTERNAL_EVENT__"; // 使用更明确的名称
 
   FiniteStateMachine() : running(false), initialized(false) {}
   ~FiniteStateMachine() {

@@ -74,7 +74,7 @@ public:
 
     // 事件预处理回调
     bool onPreEvent(const smf::State& currentState, const smf::Event& event) {
-        SMF_LOGI("事件检验: [" + event + "] 在状态 [" + currentState + "]");
+        SMF_LOGI("事件检验: [" + event.toString() + "] 在状态 [" + currentState + "]");
         
         // 检查特定状态下的事件是否合法
         if (event == "ACTIVATE_SECURITY" && currentState == "OFF") {
@@ -217,7 +217,7 @@ public:
     // 事件后处理回调
     void onPostEvent(const smf::Event& event, bool handled) {
         std::string status = handled ? "已成功处理" : "未被处理";
-        SMF_LOGI("事件 [" + event + "] " + status);
+        SMF_LOGI("事件 [" + event.toString() + "] " + status);
                   
         // 事件处理后的特定逻辑
         if (handled && event == "POWER_INCREASE") {
@@ -297,7 +297,7 @@ private:
         
         // 如果有事件，打印事件名称
         if (!event.empty()) {
-            SMF_LOGI("触发事件: " + event);
+            SMF_LOGI("触发事件: " + event.toString());
         }
         SMF_LOGI("------------------------------------------");
     }

@@ -37,8 +37,9 @@
 
 #pragma once
 
-#include "common_define.h"
 #include <functional>
+#include "common_define.h"
+#include "Event.h"
 
 namespace smf {
 class StateEventHandler final {
