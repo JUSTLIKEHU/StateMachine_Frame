@@ -423,6 +423,13 @@ A more complex example that simulates a smart home system with multiple states, 
 - `template<typename T> void setExitStateCallback(T* instance, void (T::*method)(...))`: Set class member function as state exit callback
 - `template<typename T> void setPostEventCallback(T* instance, void (T::*method)(...))`: Set class member function as event post-processing callback
 
+#### Internal Handler Methods
+- `void onTransition(const std::vector<State>& fromStates, const Event& event, const std::vector<State>& toStates)`: Handle state transition
+- `bool onPreEvent(const State& currentState, const Event& event)`: Handle event pre-processing
+- `void onEnterState(const std::vector<State>& states)`: Handle state entry
+- `void onExitState(const std::vector<State>& states)`: Handle state exit
+- `void onPostEvent(const Event& event, bool handled)`: Handle event post-processing
+
 ### StateEventHandler Class
 
 #### Callback Function Types
@@ -584,6 +591,11 @@ This design ensures efficient concurrent processing while avoiding complex race 
 - CMake 3.10 or higher
 - pthread library
 
+### Library Output Options
+The state machine framework can be built as both static and dynamic libraries:
+- **Static Library**: Built as `libstatemachine.a`
+- **Dynamic Library**: Built as `libstatemachine.so` with proper soname versioning (`libstatemachine.so.1` -> `libstatemachine.so.1.0.0`)
+
 ### Build Steps
 ```bash
 # Clone the repository
@@ -602,6 +614,35 @@ make
 cd bin
 ./main_test
 ./comprehensive_test
+```
+
+### Installation
+```bash
+# Install the library and headers (from the build directory)
+sudo make install
+```
+
+By default, the library will be installed to:
+- Libraries: `/usr/local/lib/`
+- Headers: `/usr/local/include/statemachine/`
+- CMake config files: `/usr/local/lib/cmake/FSM/`
+- pkg-config file: `/usr/local/lib/pkgconfig/`
+
+### Using the Installed Library in Other Projects
+
+#### With CMake
+```cmake
+# Find the library in your CMakeLists.txt
+find_package(FSM REQUIRED)
+
+# Link against the library
+target_link_libraries(your_target_name FSM::statemachine)
+```
+
+#### With pkg-config
+```bash
+# Compile with pkg-config information
+g++ -o your_program your_program.cpp $(pkg-config --cflags --libs statemachine)
 ```
 
 ---

@@ -1,0 +1,17 @@
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/FSMTargets.cmake")
+
+# 提供组件支持
+set_and_check(FSM_INCLUDE_DIR "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@/statemachine")
+set_and_check(FSM_LIB_DIR "@PACKAGE_CMAKE_INSTALL_LIBDIR@")
+
+check_required_components(FSM)
+
+# 提供导入目标
+if(NOT TARGET FSM::statemachine)
+  add_library(FSM::statemachine INTERFACE IMPORTED)
+  set_target_properties(FSM::statemachine PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${FSM_INCLUDE_DIR}"
+  )
+endif()

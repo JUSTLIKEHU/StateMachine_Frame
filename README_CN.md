@@ -584,6 +584,11 @@ graph TD
 - CMake 3.10或更高版本
 - pthread库
 
+### 库输出选项
+状态机框架可以构建为静态库和动态库两种形式：
+- **静态库**：构建为`libstatemachine.a`
+- **动态库**：构建为`libstatemachine.so`，并具有正确的soname版本信息（`libstatemachine.so.1` -> `libstatemachine.so.1.0.0`）
+
 ### 构建步骤
 ```bash
 # 克隆仓库
@@ -602,6 +607,35 @@ make
 cd bin
 ./main_test
 ./comprehensive_test
+```
+
+### 安装
+```bash
+# 安装库文件和头文件（在build目录中执行）
+sudo make install
+```
+
+默认情况下，库将被安装到以下位置：
+- 库文件：`/usr/local/lib/`
+- 头文件：`/usr/local/include/statemachine/`
+- CMake配置文件：`/usr/local/lib/cmake/FSM/`
+- pkg-config文件：`/usr/local/lib/pkgconfig/`
+
+### 在其他项目中使用已安装的库
+
+#### 使用CMake
+```cmake
+# 在CMakeLists.txt中查找库
+find_package(FSM REQUIRED)
+
+# 链接到库
+target_link_libraries(你的目标名称 FSM::statemachine)
+```
+
+#### 使用pkg-config
+```bash
+# 使用pkg-config信息编译
+g++ -o your_program your_program.cpp $(pkg-config --cflags --libs statemachine)
 ```
 
 ---

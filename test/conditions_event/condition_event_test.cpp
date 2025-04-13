@@ -28,7 +28,7 @@ void OnStateChanged(const std::vector<State>& fromStates, const Event& event,
     std::cout << std::endl;
 }
 
-int main(int argc, char* argv[]) {
+int main() {
     // 配置状态机
     FiniteStateMachine stateMachine;
     std::string configPath = "../../test/conditions_event/config/condition_event_test.json";
