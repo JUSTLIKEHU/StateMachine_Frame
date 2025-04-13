@@ -1,0 +1,94 @@
+{
+  "states": [
+    {
+      "name": "INIT"
+    },
+    {
+      "name": "WORKING"
+    },
+    {
+      "name": "ERROR"
+    }
+  ],
+  "initial_state": "INIT",
+  "events": [
+    {
+      "name": "START_WORK",
+      "trigger_mode": "edge",
+      "conditions": [
+        {
+          "name": "power",
+          "range": [
+            1,
+            1
+          ],
+          "duration": 1000
+        },
+        {
+          "name": "system_ready",
+          "range": [
+            1,
+            1
+          ],
+          "duration": 500
+        }
+      ],
+      "conditions_operator": "AND"
+    },
+    {
+      "name": "SYSTEM_ERROR",
+      "trigger_mode": "edge",
+      "conditions": [
+        {
+          "name": "error_code",
+          "range": [
+            1,
+            10
+          ],
+          "duration": 0
+        }
+      ],
+      "conditions_operator": "AND"
+    }
+  ],
+  "transitions": [
+    {
+      "from": "INIT",
+      "to": "WORKING",
+      "event": "START_WORK"
+    },
+    {
+      "from": "WORKING",
+      "to": "ERROR",
+      "event": "SYSTEM_ERROR"
+    },
+    {
+      "from": "ERROR",
+      "to": "INIT",
+      "conditions": [
+        {
+          "name": "error_code",
+          "range": [
+            0,
+            0
+          ],
+          "duration": 0
+        }
+      ]
+    },
+    {
+      "from": "WORKING",
+      "to": "INIT",
+      "conditions": [
+        {
+          "name": "START_WORK",
+          "range": [
+            0,
+            0
+          ],
+          "duration": 0
+        }
+      ]
+    }
+  ]
+}

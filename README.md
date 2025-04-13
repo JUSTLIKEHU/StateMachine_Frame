@@ -16,6 +16,9 @@ This is a C++ implementation of a **Finite State Machine (FSM)** that supports e
 - **Flexible Callback Mechanism**: Support for lambda functions and class member functions as callbacks.
 - **Complete State Hierarchy**: Provide complete state hierarchy information in callbacks.
 - **Integrated Logging System**: A thread-safe logging system with multiple log levels.
+- **Event Definition Mechanism**: Support for defining events and their triggering conditions in the configuration file.
+- **Multiple Trigger Modes**: Support for both edge-triggered and level-triggered event modes.
+- **Automatic Condition Management**: Automatically create same-named conditions for defined events, simplifying state tracking.
 
 ---
 
@@ -64,7 +67,17 @@ StateMachine_Frame/
   };
   ```
 
-3. **Transition Rule**
+3. **Event Definition Structure**
+  ```cpp
+  struct EventDefinition {
+    std::string name;               // Event name
+    std::string trigger_mode;       // Trigger mode: edge (edge-triggered) or level (level-triggered)
+    std::vector<Condition> conditions;  // Conditions that trigger the event
+    std::string conditionsOperator; // Condition operator ("AND" or "OR")
+  };
+  ```
+
+4. **Transition Rule**
   ```cpp
   struct TransitionRule {
     State from;                         // Source state
@@ -75,7 +88,7 @@ StateMachine_Frame/
   };
   ```
 
-4. **State Info**
+5. **State Info**
   ```cpp
   struct StateInfo {
     State name;                   // State name
@@ -84,7 +97,7 @@ StateMachine_Frame/
   };
   ```
 
-5. **Condition Update Event**
+6. **Condition Update Event**
   ```cpp
   struct ConditionUpdateEvent {
     std::string name;
@@ -93,7 +106,7 @@ StateMachine_Frame/
   };
   ```
 
-6. **Duration Condition**
+7. **Duration Condition**
   ```cpp
   struct DurationCondition {
     std::string name;
@@ -102,7 +115,7 @@ StateMachine_Frame/
   };
   ```
 
-7. **State Event Handler**
+8. **State Event Handler**
   ```cpp
   class StateEventHandler {
   public:
@@ -153,14 +166,15 @@ StateMachine_Frame/
   - Receives complete state hierarchies rather than single states
   - Enables handling transitions with knowledge of the entire state context
 
-8. **Finite State Machine Class**
+9. **Finite State Machine Class**
   - Core class for managing the state machine:
     - Initialization: Load configuration from a JSON file.
     - Event Handling: Process events asynchronously.
     - Condition Handling: Update and check conditions.
     - State Transitions: Trigger transitions based on events or conditions.
+    - Event Generation: Automatically generate events based on condition changes.
 
-9. **Logger Class**
+10. **Logger Class**
   ```cpp
   class Logger {
   public:
@@ -193,6 +207,16 @@ States and transitions can be defined programmatically or loaded from a JSON fil
    {"name": "ACTIVE", "parent": "ON"}
   ],
   "initial_state": "OFF",
+  "events": [
+   {
+    "name": "power_changed",
+    "trigger_mode": "edge",
+    "conditions": [
+      {"name": "power", "range": [1, 100]}
+    ],
+    "conditions_operator": "AND"
+   }
+  ],
   "transitions": [
    {
     "from": "OFF",
@@ -476,6 +500,7 @@ graph TD
   B -->|No| D[Error and Exit]
   
   C --> E[Create Event Handler Thread]
+  C --> E1[Create Event Trigger Thread]
   C --> E2[Create Condition Handler Thread]
   C --> F[Create Timer Thread]
   
@@ -486,22 +511,26 @@ graph TD
   I0 -->|Rejected| I2[Post-Event Processing]
   H -->|No Event| G
   
+  E1 --> G1[Event Trigger Loop]
+  G1 --> H1{Conditions Trigger Event?}
+  H1 -->|Conditions Met| I1[Trigger Events Based on Definitions]
+  H1 -->|Conditions Not Met| G1
+  
   E2 --> J1[Condition Processing Loop]
   J1 --> J2{Check Condition Queue}
   J2 -->|Update Available| K[Update Condition Value]
   K --> K1{Immediate Effect?}
-  K1 -->|Yes| K2[Trigger Internal Event]
+  K1 -->|Yes| K2[Notify Event Trigger Thread]
   K1 -->|No| K3[Add to Timer Queue]
   J2 -->|No Update| J1
   
   F --> M[Timer Loop]
   M --> N{Check Timed Conditions}
-  N -->|Condition Met| O[Trigger Internal Event]
+  N -->|Condition Met| O[Notify Event Trigger Thread]
   N -->|Condition Not Met| P[Wait for Next Timer Tick]
   
   I --> Q0[Execute State Transition]
-  K2 --> Q0
-  O --> Q0
+  I1 --> Q0
   Q0 --> Q1[Exit Old State]
   Q1 --> Q[Get Complete State Hierarchies]
   Q --> R[Invoke Transition Callback]
@@ -519,10 +548,11 @@ graph TD
 
 ## Finite State Machine Thread Model
 
-The state machine uses a three-thread model for asynchronous processing:
+The state machine uses a four-thread model for asynchronous processing:
 1. **Event Handler Thread**: Dedicated to processing events from the event queue
-2. **Condition Handler Thread**: Dedicated to processing condition updates
-3. **Timer Thread**: Dedicated to handling time-based conditions
+2. **Event Trigger Thread**: Dedicated to generating events based on condition changes
+3. **Condition Handler Thread**: Dedicated to processing condition updates
+4. **Timer Thread**: Dedicated to handling time-based conditions
 
 This design ensures efficient concurrent processing while avoiding complex race conditions.
 
@@ -535,6 +565,7 @@ This design ensures efficient concurrent processing while avoiding complex race 
 3. **Duration Condition Optimization**: Use priority queue to efficiently manage timed conditions
 4. **Fine-grained Locking**: Separate mutexes for events, conditions, and states
 5. **Condition Variable Notification**: Use condition variables instead of polling to reduce CPU usage
+6. **Automatic Event Generation**: Generate events automatically based on condition changes, reducing manual triggering
 
 ---
 
@@ -589,6 +620,6 @@ Contributions are welcome! Please open an issue or submit a pull request for any
 
 ## Author
 
-[JerryHu]  
-[1151217347@qq.com]  
+[Xiaokui.Hu]
+[1151217347@qq.com]
 [JUSTLIKEHU](https://github.com/JUSTLIKEHU)

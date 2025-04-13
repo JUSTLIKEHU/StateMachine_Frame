@@ -35,6 +35,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <fstream>
@@ -97,6 +98,14 @@ struct DurationCondition {
   std::string name;
   int value;  // 添加值字段，用于跟踪触发条件时的值
   std::chrono::steady_clock::time_point expiryTime;
+};
+
+// 添加事件定义结构体
+struct EventDefinition {
+  std::string name;               // 事件名称
+  std::string trigger_mode;       // 触发模式：edge (边缘触发) 或 level (水平触发)
+  std::vector<Condition> conditions;  // 触发事件的条件列表
+  std::string conditionsOperator; // 条件运算符 ("AND" 或 "OR")
 };
 
 // 重新设计状态事件处理器为回调函数集合
@@ -261,6 +270,7 @@ class FiniteStateMachine {
 
     running = true;
     eventThread = std::thread(&FiniteStateMachine::eventLoop, this);
+    eventTriggerThread = std::thread(&FiniteStateMachine::eventTriggerLoop, this);
     conditionThread = std::thread(&FiniteStateMachine::conditionLoop, this);
     timerThread = std::thread(&FiniteStateMachine::timerLoop, this);
     return true;
@@ -271,6 +281,7 @@ class FiniteStateMachine {
     running = false;
     // 通知所有等待中的线程
     eventCV.notify_one();
+    eventTriggerCV.notify_one();
     conditionCV.notify_one();
     timerCV.notify_one();
 
@@ -283,6 +294,9 @@ class FiniteStateMachine {
     }
     if (eventThread.joinable()) {
       eventThread.join();
+    }
+    if (eventTriggerThread.joinable()) {
+      eventTriggerThread.join();
     }
   }
 
@@ -459,6 +473,34 @@ class FiniteStateMachine {
 
     // 加载初始状态
     setInitialState(config["initial_state"]);
+
+    // 加载事件定义（新增）
+    if (config.contains("events")) {
+      for (const auto& eventJson : config["events"]) {
+        EventDefinition eventDef;
+        eventDef.name = eventJson["name"];
+        eventDef.trigger_mode = eventJson.value("trigger_mode", "edge"); // 默认为边缘触发
+        eventDef.conditionsOperator = eventJson.value("conditions_operator", "AND"); // 默认为AND条件
+        
+        // 加载条件
+        if (eventJson.contains("conditions")) {
+          for (const auto& condition : eventJson["conditions"]) {
+            Condition cond;
+            cond.name = condition["name"];
+            cond.range = {condition["range"][0], condition["range"][1]};
+            cond.duration = condition.value("duration", 0);  // 默认为0
+            eventDef.conditions.push_back(cond);
+            allConditions.push_back(cond);
+          }
+        }
+        
+        // 为每个事件创建同名条件，初始值为0
+        conditionValues[eventDef.name] = 0;
+        
+        // 添加到事件定义列表
+        eventDefinitions.push_back(eventDef);
+      }
+    }
 
     // 加载状态转移规则
     for (const auto& transition : config["transitions"]) {
@@ -688,7 +730,6 @@ class FiniteStateMachine {
 
   // 处理条件更新队列
   void processConditionUpdates() {
-    bool immediateConditionChanged = false;
     
     while (!conditionQueue.empty()) {
       const auto& update = conditionQueue.front();
@@ -721,18 +762,60 @@ class FiniteStateMachine {
           }
         }
         
-        // 如果没有持续时间条件，标记为需要立即检查
+        // 如果没有持续时间条件，需要触发事件生成检查
         if (!hasDurationCondition) {
-          immediateConditionChanged = true;
+          eventTriggerCV.notify_one();
+          SMF_LOGD("Condition updated: " + update.name + " to " + std::to_string(update.value));
         }
       }
       conditionQueue.pop();
     }
-    
-    // 只有即时条件发生变化时，才触发内部事件进行条件检查
-    if (immediateConditionChanged) {
-      handleEvent(INTERNAL_EVENT);
+  }
+
+  // 添加新方法：检查事件条件
+  void triggerEvent() {
+    // 检查所有事件定义
+    for (const auto& eventDef : eventDefinitions) {
+      bool conditionsMet = checkConditions(eventDef.conditions, eventDef.conditionsOperator);
+      int currentEventConditionValue = conditionValues[eventDef.name];
+      
+      // 检查事件条件是否满足
+      if (conditionsMet) {
+        // 如果条件满足，且对应事件条件当前值为0（边缘触发）
+        if (currentEventConditionValue == 0) {
+          // 更新事件同名条件值为1
+          conditionValues[eventDef.name] = 1;
+          // 记录更新时间
+          conditionLastUpdate[eventDef.name] = std::chrono::steady_clock::now();
+          
+          SMF_LOGI("Event condition met: " + eventDef.name + ", triggered event and set condition to 1");
+          
+          // 触发事件
+          if (eventDef.trigger_mode == "edge") {
+            handleEvent(eventDef.name);
+          }
+        }
+      } else {
+        // 条件不满足，且对应事件条件当前值为1（表示之前条件满足过）
+        if (currentEventConditionValue == 1) {
+          // 将事件同名条件值重置为0
+          conditionValues[eventDef.name] = 0;
+          // 记录更新时间
+          conditionLastUpdate[eventDef.name] = std::chrono::steady_clock::now();
+          
+          SMF_LOGI("Event condition no longer met: " + eventDef.name + ", reset condition to 0");
+          
+          // 如果是边缘触发模式，在条件消失时也触发一次事件
+          if (eventDef.trigger_mode == "edge") {
+            // 这里可以选择触发特定的事件，例如 eventDef.name + "_RESET"
+            // 或者直接触发内部事件进行状态检查
+            handleEvent(INTERNAL_EVENT);
+          }
+        }
+      }
     }
+    // 所有条件更新都支持触发内部事件
+    handleEvent(INTERNAL_EVENT);
   }
 
   // 新增定时器循环处理
@@ -758,13 +841,23 @@ class FiniteStateMachine {
             triggeredDurationConditions[expiredCondition.name] = expiredCondition.value;
             SMF_LOGI("Duration condition triggered: " + expiredCondition.name + 
                     " with value " + std::to_string(expiredCondition.value));
-            // 触发内部事件进行条件检查
-            handleEvent(INTERNAL_EVENT);
+            // 触发事件检查
+            eventTriggerCV.notify_one();
           }
         }
       } else {
         timerCV.wait_until(lock, timerQueue.top().expiryTime);
       }
+    }
+  }
+
+  void eventTriggerLoop() {
+    while (running) {
+      std::unique_lock<std::mutex> lock(eventTriggerMutex);
+      eventTriggerCV.wait(lock);
+      if (!running) break;
+      // 触发事件
+      triggerEvent();
     }
   }
 
@@ -784,14 +877,17 @@ class FiniteStateMachine {
   std::shared_ptr<StateEventHandler> stateEventHandler;
 
   // 新增成员变量
-  bool running;
+  std::atomic_bool running;
   bool initialized;
   std::thread eventThread;
+  std::thread eventTriggerThread;
   std::thread conditionThread;
   std::thread timerThread;
   std::queue<Event> eventQueue;
   std::mutex eventMutex;
   std::condition_variable eventCV;
+  std::mutex eventTriggerMutex;
+  std::condition_variable eventTriggerCV;
   std::queue<ConditionUpdateEvent> conditionQueue;
   std::mutex conditionMutex;
   std::condition_variable conditionCV;
@@ -807,6 +903,8 @@ class FiniteStateMachine {
   std::mutex timerMutex;
   std::condition_variable timerCV;
   std::unordered_map<std::string, int> triggeredDurationConditions; // 记录已触发的持续条件
+  // 在类的成员变量部分添加事件定义存储
+  std::vector<EventDefinition> eventDefinitions;
 };
 
 // 创建一个演示如何使用类成员函数作为回调的示例类

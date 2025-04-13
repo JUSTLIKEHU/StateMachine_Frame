@@ -8,6 +8,9 @@ add_executable(comprehensive_test
     comprehensive_test/comprehensive_test.cpp
 )
 
+# 添加条件事件测试子目录
+add_subdirectory(conditions_event)
+
 # 设置线程库
 find_package(Threads REQUIRED)
 
