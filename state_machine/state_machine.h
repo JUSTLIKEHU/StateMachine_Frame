@@ -777,39 +777,41 @@ class FiniteStateMachine {
     // 检查所有事件定义
     for (const auto& eventDef : eventDefinitions) {
       bool conditionsMet = checkConditions(eventDef.conditions, eventDef.conditionsOperator);
-      int currentEventConditionValue = conditionValues[eventDef.name];
-      
-      // 检查事件条件是否满足
-      if (conditionsMet) {
-        // 如果条件满足，且对应事件条件当前值为0（边缘触发）
-        if (currentEventConditionValue == 0) {
-          // 更新事件同名条件值为1
-          conditionValues[eventDef.name] = 1;
-          // 记录更新时间
-          conditionLastUpdate[eventDef.name] = std::chrono::steady_clock::now();
-          
-          SMF_LOGI("Event condition met: " + eventDef.name + ", triggered event and set condition to 1");
-          
-          // 触发事件
-          if (eventDef.trigger_mode == "edge") {
-            handleEvent(eventDef.name);
+      {
+        std::lock_guard<std::mutex> lock(conditionMutex);
+        int currentEventConditionValue = conditionValues[eventDef.name];
+        // 检查事件条件是否满足
+        if (conditionsMet) {
+          // 如果条件满足，且对应事件条件当前值为0（边缘触发）
+          if (currentEventConditionValue == 0) {
+            // 更新事件同名条件值为1
+            conditionValues[eventDef.name] = 1;
+            // 记录更新时间
+            conditionLastUpdate[eventDef.name] = std::chrono::steady_clock::now();
+            
+            SMF_LOGI("Event condition met: " + eventDef.name + ", triggered event and set condition to 1");
+            
+            // 触发事件
+            if (eventDef.trigger_mode == "edge") {
+              handleEvent(eventDef.name);
+            }
           }
-        }
-      } else {
-        // 条件不满足，且对应事件条件当前值为1（表示之前条件满足过）
-        if (currentEventConditionValue == 1) {
-          // 将事件同名条件值重置为0
-          conditionValues[eventDef.name] = 0;
-          // 记录更新时间
-          conditionLastUpdate[eventDef.name] = std::chrono::steady_clock::now();
-          
-          SMF_LOGI("Event condition no longer met: " + eventDef.name + ", reset condition to 0");
-          
-          // 如果是边缘触发模式，在条件消失时也触发一次事件
-          if (eventDef.trigger_mode == "edge") {
-            // 这里可以选择触发特定的事件，例如 eventDef.name + "_RESET"
-            // 或者直接触发内部事件进行状态检查
-            handleEvent(INTERNAL_EVENT);
+        } else {
+          // 条件不满足，且对应事件条件当前值为1（表示之前条件满足过）
+          if (currentEventConditionValue == 1) {
+            // 将事件同名条件值重置为0
+            conditionValues[eventDef.name] = 0;
+            // 记录更新时间
+            conditionLastUpdate[eventDef.name] = std::chrono::steady_clock::now();
+            
+            SMF_LOGI("Event condition no longer met: " + eventDef.name + ", reset condition to 0");
+            
+            // 如果是边缘触发模式，在条件消失时也触发一次事件
+            if (eventDef.trigger_mode == "edge") {
+              // 这里可以选择触发特定的事件，例如 eventDef.name + "_RESET"
+              // 或者直接触发内部事件进行状态检查
+              handleEvent(INTERNAL_EVENT);
+            }
           }
         }
       }
