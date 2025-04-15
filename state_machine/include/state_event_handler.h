@@ -39,7 +39,7 @@
 
 #include <functional>
 #include "common_define.h"
-#include "Event.h"
+#include "event.h"
 
 namespace smf {
 class StateEventHandler final {

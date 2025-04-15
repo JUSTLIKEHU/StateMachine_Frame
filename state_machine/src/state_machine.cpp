@@ -158,13 +158,6 @@ void FiniteStateMachine::addTransition(const TransitionRule& rule) {
   } else {
     eventTransitions.insert({{rule.from, rule.event}, rule});
   }
-
-  // 初始化条件的默认值为 0
-  for (const auto& cond : rule.conditions) {
-    if (conditionValues.find(cond.name) == conditionValues.end()) {
-      conditionValues[cond.name] = 0;  // 默认值为 0
-    }
-  }
 }
 
 void FiniteStateMachine::setInitialState(const State& state) {
@@ -252,8 +245,14 @@ void FiniteStateMachine::loadFromJSON(const std::string& filepath) {
         allConditions.push_back(cond);
       }
     }
-
     addTransition(rule);
+  }
+
+  // 初始化条件的默认值为 0
+  for (const auto& cond : allConditions) {
+    if (conditionValues.find(cond.name) == conditionValues.end()) {
+      conditionValues[cond.name] = 0;  // 默认值为 0
+    }
   }
 }
 
@@ -475,7 +474,7 @@ void FiniteStateMachine::processConditionUpdates() {
             // 如果条件配置了持续时间且当前值在范围内，添加到定时器
             std::lock_guard<std::mutex> timerLock(timerMutex);
             auto expiryTime = update.updateTime + std::chrono::milliseconds(cond.duration);
-            timerQueue.push({update.name, update.value, expiryTime});
+            timerQueue.push({update.name, update.value, cond.duration, expiryTime});
             timerCV.notify_one();
             hasDurationCondition = true;
             break; // 一个条件名只添加一个定时器
@@ -559,11 +558,15 @@ void FiniteStateMachine::timerLoop() {
       timerQueue.pop();
       SMF_LOGD("Duration condition expired: " + expiredCondition.name + 
               " with value " + std::to_string(expiredCondition.value));
-      // 检查当前条件值是否仍然匹配触发时的值
+      // 检查当前条件值是否仍然匹配触发时的值并检查检查状态持续时间是否满足
       {
         std::lock_guard<std::mutex> condLock(conditionMutex);
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           now - conditionLastUpdate[expiredCondition.name])
+                           .count();
         if (conditionValues.find(expiredCondition.name) != conditionValues.end() &&
-            conditionValues[expiredCondition.name] == expiredCondition.value) {
+            conditionValues[expiredCondition.name] == expiredCondition.value &&
+            elapsed >= expiredCondition.duration) {
           // 记录此条件已触发
           triggeredDurationConditions[expiredCondition.name] = expiredCondition.value;
           SMF_LOGI("Duration condition triggered: " + expiredCondition.name + 

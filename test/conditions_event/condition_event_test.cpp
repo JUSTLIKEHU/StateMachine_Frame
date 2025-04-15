@@ -11,6 +11,7 @@
 #include <string>
 #include <thread>
 
+#include "logger.h"
 #include "state_machine.h"
 
 using namespace smf;
@@ -21,11 +22,11 @@ void OnStateChanged(const std::vector<State>& fromStates, const Event& event,
     State from = fromStates.empty() ? "" : fromStates[0];
     State to = toStates.empty() ? "" : toStates[0];
     
-    std::cout << "[状态变化] " << from << " -> " << to;
+    std::string logMsg = "[状态变化]: " + from + " -> " + to;
     if (!event.empty()) {
-        std::cout << " (由事件 " << event << " 触发)";
+        logMsg += " (由事件 " + event.getName() + " 触发)";
     }
-    std::cout << std::endl;
+    SMF_LOGI(logMsg);
 }
 
 int main() {
@@ -35,7 +36,7 @@ int main() {
     
     // 初始化状态机
     if (!stateMachine.Init(configPath)) {
-        std::cerr << "初始化状态机失败！" << std::endl;
+        SMF_LOGE("初始化状态机失败！");
         return 1;
     }
     
@@ -44,61 +45,69 @@ int main() {
     
     // 启动状态机
     if (!stateMachine.start()) {
-        std::cerr << "启动状态机失败！" << std::endl;
+        SMF_LOGE("启动状态机失败！");
         return 1;
     }
     
-    std::cout << "状态机已启动，初始状态: " << stateMachine.getCurrentState() << std::endl;
+    SMF_LOGI("状态机已启动，初始状态: " + stateMachine.getCurrentState());
     
     // 测试场景1: 正常启动工作流程
-    std::cout << "\n[测试场景1] 正常启动工作流程" << std::endl;
-    std::cout << "设置 power=1" << std::endl;
+    SMF_LOGI("\n[测试场景1] 正常启动工作流程");
+    SMF_LOGI("设置 power=1");
+    stateMachine.setConditionValue("power", 1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    SMF_LOGI("设置 power=0");
+    stateMachine.setConditionValue("power", 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(700));
+
+    SMF_LOGI("设置 power=1");
     stateMachine.setConditionValue("power", 1);
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     
-    std::cout << "设置 system_ready=1" << std::endl;
+    SMF_LOGI("设置 system_ready=1");
     stateMachine.setConditionValue("system_ready", 1);
     
     // 等待足够的时间让持续条件满足
-    std::cout << "等待条件持续时间满足..." << std::endl;
+    SMF_LOGI("等待条件持续时间满足...");
     std::this_thread::sleep_for(std::chrono::milliseconds(1200));
     
-    std::cout << "当前状态: " << stateMachine.getCurrentState() << std::endl;
+    SMF_LOGI("当前状态: " + stateMachine.getCurrentState());
     
     // 测试场景2: 条件不满足导致事件消失
-    std::cout << "\n[测试场景2] 条件不满足导致事件消失" << std::endl;
-    std::cout << "设置 system_ready=0" << std::endl;
+    SMF_LOGI("\n[测试场景2] 条件不满足导致事件消失");
+    SMF_LOGI("设置 system_ready=0");
     stateMachine.setConditionValue("system_ready", 0);
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
     
-    std::cout << "当前状态: " << stateMachine.getCurrentState() << std::endl;
+    SMF_LOGI("当前状态: " + stateMachine.getCurrentState());
     
     // 测试场景3: 触发错误
-    std::cout << "\n[测试场景3] 触发系统错误" << std::endl;
-    std::cout << "设置 power=1, system_ready=1" << std::endl;
+    SMF_LOGI("\n[测试场景3] 触发系统错误");
+    SMF_LOGI("设置 power=1, system_ready=1");
     stateMachine.setConditionValue("power", 1);
     stateMachine.setConditionValue("system_ready", 1);
     std::this_thread::sleep_for(std::chrono::milliseconds(1200));
     
-    std::cout << "当前状态: " << stateMachine.getCurrentState() << std::endl;
+    SMF_LOGI("当前状态: " + stateMachine.getCurrentState());
     
-    std::cout << "设置 error_code=5" << std::endl;
+    SMF_LOGI("设置 error_code=5");
     stateMachine.setConditionValue("error_code", 5);
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
     
-    std::cout << "当前状态: " << stateMachine.getCurrentState() << std::endl;
+    SMF_LOGI("当前状态: " + stateMachine.getCurrentState());
     
     // 测试场景4: 清除错误恢复初始状态
-    std::cout << "\n[测试场景4] 清除错误恢复初始状态" << std::endl;
-    std::cout << "设置 error_code=0" << std::endl;
+    SMF_LOGI("\n[测试场景4] 清除错误恢复初始状态");
+    SMF_LOGI("设置 error_code=0");
     stateMachine.setConditionValue("error_code", 0);
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
     
-    std::cout << "当前状态: " << stateMachine.getCurrentState() << std::endl;
+    SMF_LOGI("当前状态: " + stateMachine.getCurrentState());
     
     // 停止状态机
     stateMachine.stop();
-    std::cout << "测试完成，状态机已停止" << std::endl;
+    SMF_LOGI("测试完成，状态机已停止");
     
     return 0;
 }

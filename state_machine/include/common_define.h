@@ -83,6 +83,7 @@ struct ConditionUpdateEvent {
 struct DurationCondition {
   std::string name;
   int value;  // 添加值字段，用于跟踪触发条件时的值
+  int duration;  // 记录持续时间，单位为毫秒，用于定时器是否满足
   std::chrono::steady_clock::time_point expiryTime;
 };
 
