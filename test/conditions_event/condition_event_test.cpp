@@ -30,6 +30,8 @@ void OnStateChanged(const std::vector<State>& fromStates, const Event& event,
 }
 
 int main() {
+     // 初始化日志系统
+    SMF_LOGGER_INIT(smf::LogLevel::DEBUG);
     // 配置状态机
     FiniteStateMachine stateMachine;
     std::string configPath = "../../test/conditions_event/config/condition_event_test.json";

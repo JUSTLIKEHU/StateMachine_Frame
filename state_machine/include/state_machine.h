@@ -189,7 +189,7 @@ class FiniteStateMachine {
   bool checkConditions(const std::vector<Condition>& conditions, const std::string& op);
 
   // 处理条件更新队列
-  void processConditionUpdates();
+  void processConditionUpdates(std::queue<ConditionUpdateEvent>& conditionUpdateQueue);
 
   // 添加新方法：检查事件条件
   void triggerEvent();
@@ -210,7 +210,8 @@ class FiniteStateMachine {
   State currentState;
 
   // 条件值
-  std::unordered_map<std::string, int> conditionValues;
+  std::unordered_map<std::string, ConditionValue> condition_values_;
+  std::mutex condition_values_mutex_;
 
   // 状态转移处理器
   std::shared_ptr<StateEventHandler> stateEventHandler;
@@ -227,11 +228,10 @@ class FiniteStateMachine {
   std::condition_variable eventCV;
   std::mutex eventTriggerMutex;
   std::condition_variable eventTriggerCV;
-  std::queue<ConditionUpdateEvent> conditionQueue;
-  std::mutex conditionMutex;
-  std::condition_variable conditionCV;
+  std::queue<ConditionUpdateEvent> condition_update_queue_;
+  std::mutex condition_update_mutex_;
+  std::condition_variable condition_update_cv_;
   mutable std::mutex stateMutex;
-  std::unordered_map<std::string, std::chrono::steady_clock::time_point> conditionLastUpdate;
   // 添加新的成员变量来存储所有条件
   std::vector<Condition> allConditions;
   std::priority_queue<DurationCondition, std::vector<DurationCondition>,
@@ -241,7 +241,6 @@ class FiniteStateMachine {
       }};
   std::mutex timerMutex;
   std::condition_variable timerCV;
-  std::unordered_map<std::string, int> triggeredDurationConditions; // 记录已触发的持续条件
   // 在类的成员变量部分添加事件定义存储
   std::vector<EventDefinition> eventDefinitions;
 };

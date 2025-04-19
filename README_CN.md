@@ -19,6 +19,8 @@
 - **事件定义机制**：支持在配置文件中定义事件及其触发条件。
 - **多种触发模式**：支持边缘触发和水平触发两种事件触发模式。
 - **条件自动管理**：为定义的事件自动创建同名条件，简化状态跟踪。
+- **优先级队列定时器**：使用优先级队列高效管理定时条件。
+- **细粒度线程同步**：为事件、条件和状态使用独立的互斥锁和条件变量，提高并发性能。
 
 ---
 
@@ -63,11 +65,21 @@ StateMachine_Frame/
     std::string name;           // 条件名称
     std::pair<int, int> range;  // 条件范围 [min, max]
     int duration{0};            // 条件持续时间(毫秒),默认0表示立即生效
-    std::chrono::steady_clock::time_point lastUpdateTime;  // 最后一次更新时间
   };
   ```
 
-3. **事件定义结构体**
+3. **条件值**
+  ```cpp
+  struct ConditionValue {
+    std::string name;                                 // 条件名称
+    int value;                                        // 条件当前值
+    std::chrono::steady_clock::time_point lastUpdateTime;  // 最后一次更新时间
+    std::chrono::steady_clock::time_point lastChangedTime; // 上次值变化的时间
+    bool isTriggered;                                 // 是否已触发(用于持续条件)
+  };
+  ```
+
+4. **事件定义结构体**
   ```cpp
   struct EventDefinition {
     std::string name;               // 事件名称
@@ -77,7 +89,7 @@ StateMachine_Frame/
   };
   ```
 
-4. **状态转换规则**
+5. **状态转换规则**
   ```cpp
   struct TransitionRule {
     State from;                         // 起始状态
@@ -88,7 +100,7 @@ StateMachine_Frame/
   };
   ```
 
-5. **状态信息**
+6. **状态信息**
   ```cpp
   struct StateInfo {
     State name;                   // 状态名称
@@ -97,7 +109,7 @@ StateMachine_Frame/
   };
   ```
 
-6. **条件更新事件**
+7. **条件更新事件**
   ```cpp
   struct ConditionUpdateEvent {
     std::string name;
@@ -106,7 +118,7 @@ StateMachine_Frame/
   };
   ```
 
-7. **持续条件**
+8. **持续条件**
   ```cpp
   struct DurationCondition {
     std::string name;
@@ -115,7 +127,7 @@ StateMachine_Frame/
   };
   ```
 
-8. **状态事件处理器**
+9. **状态事件处理器**
   ```cpp
   class StateEventHandler {
   public:
@@ -166,7 +178,7 @@ StateMachine_Frame/
   - 接收完整的状态层次结构而非单个状态
   - 能够在知道整个状态上下文的情况下处理转换
 
-9. **有限状态机类**
+10. **有限状态机类**
   - 管理状态机的核心类：
     - 初始化：从JSON文件加载配置。
     - 事件处理：异步处理事件。
@@ -174,7 +186,7 @@ StateMachine_Frame/
     - 状态转换：基于事件或条件触发转换。
     - 事件生成：基于条件自动生成事件。
 
-10. **日志记录器类**
+11. **日志记录器类**
   ```cpp
   class Logger {
   public:

@@ -53,7 +53,14 @@ struct Condition {
   std::string name;           // 条件名称
   std::pair<int, int> range;  // 条件范围 [min, max]
   int duration{0};            // 条件持续时间(毫秒),默认0表示立即生效
+};
+
+struct ConditionValue {
+  std::string name;  // 条件名称
+  int value;         // 条件值
   std::chrono::steady_clock::time_point lastUpdateTime;  // 最后一次更新时间
+  std::chrono::steady_clock::time_point lastChangedTime;  // 上次变化时间
+  bool isTriggered;  // 是否已触发
 };
 
 // 状态转移规则

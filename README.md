@@ -19,6 +19,8 @@ This is a C++ implementation of a **Finite State Machine (FSM)** that supports e
 - **Event Definition Mechanism**: Support for defining events and their triggering conditions in the configuration file.
 - **Multiple Trigger Modes**: Support for both edge-triggered and level-triggered event modes.
 - **Automatic Condition Management**: Automatically create same-named conditions for defined events, simplifying state tracking.
+- **Priority Queue Timer**: Efficiently manage timed conditions using a priority queue.
+- **Fine-grained Thread Synchronization**: Improve concurrent performance with separate mutexes and condition variables for events, conditions, and states.
 
 ---
 
@@ -63,11 +65,21 @@ StateMachine_Frame/
     std::string name;           // Condition name
     std::pair<int, int> range;  // Valid range [min, max]
     int duration{0};            // Duration in milliseconds, default 0 means immediate effect
-    std::chrono::steady_clock::time_point lastUpdateTime;  // Last update timestamp
   };
   ```
 
-3. **Event Definition Structure**
+3. **Condition Value**
+  ```cpp
+  struct ConditionValue {
+    std::string name;                                 // Condition name
+    int value;                                        // Current condition value
+    std::chrono::steady_clock::time_point lastUpdateTime;  // Last update timestamp
+    std::chrono::steady_clock::time_point lastChangedTime; // Timestamp when the value last changed
+    bool isTriggered;                                 // Whether it has been triggered (for duration conditions)
+  };
+  ```
+
+4. **Event Definition Structure**
   ```cpp
   struct EventDefinition {
     std::string name;               // Event name
@@ -77,7 +89,7 @@ StateMachine_Frame/
   };
   ```
 
-4. **Transition Rule**
+5. **Transition Rule**
   ```cpp
   struct TransitionRule {
     State from;                         // Source state
@@ -88,7 +100,7 @@ StateMachine_Frame/
   };
   ```
 
-5. **State Info**
+6. **State Info**
   ```cpp
   struct StateInfo {
     State name;                   // State name
@@ -97,7 +109,7 @@ StateMachine_Frame/
   };
   ```
 
-6. **Condition Update Event**
+7. **Condition Update Event**
   ```cpp
   struct ConditionUpdateEvent {
     std::string name;
@@ -106,7 +118,7 @@ StateMachine_Frame/
   };
   ```
 
-7. **Duration Condition**
+8. **Duration Condition**
   ```cpp
   struct DurationCondition {
     std::string name;
@@ -115,7 +127,7 @@ StateMachine_Frame/
   };
   ```
 
-8. **State Event Handler**
+9. **State Event Handler**
   ```cpp
   class StateEventHandler {
   public:
@@ -166,7 +178,7 @@ StateMachine_Frame/
   - Receives complete state hierarchies rather than single states
   - Enables handling transitions with knowledge of the entire state context
 
-9. **Finite State Machine Class**
+10. **Finite State Machine Class**
   - Core class for managing the state machine:
     - Initialization: Load configuration from a JSON file.
     - Event Handling: Process events asynchronously.
@@ -174,7 +186,7 @@ StateMachine_Frame/
     - State Transitions: Trigger transitions based on events or conditions.
     - Event Generation: Automatically generate events based on condition changes.
 
-10. **Logger Class**
+11. **Logger Class**
   ```cpp
   class Logger {
   public:
