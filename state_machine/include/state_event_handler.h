@@ -63,13 +63,13 @@ class StateEventHandler final {
   StateEventHandler& operator=(StateEventHandler&&) = delete;
 
   // 设置状态转换回调
-  void setTransitionCallback(TransitionCallback callback) {
+  void SetTransitionCallback(TransitionCallback callback) {
     transitionCallback = std::move(callback);
   }
 
   // 支持类成员函数作为状态转换回调
   template <typename T>
-  void setTransitionCallback(T* instance, void (T::*method)(const std::vector<State>&, const Event&,
+  void SetTransitionCallback(T* instance, void (T::*method)(const std::vector<State>&, const Event&,
                                                             const std::vector<State>&)) {
     transitionCallback = [instance, method](const std::vector<State>& fromStates,
                                             const Event& event,
@@ -79,61 +79,61 @@ class StateEventHandler final {
   }
 
   // 设置事件预处理回调
-  void setPreEventCallback(PreEventCallback callback) { preEventCallback = std::move(callback); }
+  void SetPreEventCallback(PreEventCallback callback) { preEventCallback = std::move(callback); }
 
   // 支持类成员函数作为事件预处理回调
   template <typename T>
-  void setPreEventCallback(T* instance, bool (T::*method)(const State&, const Event&)) {
+  void SetPreEventCallback(T* instance, bool (T::*method)(const State&, const Event&)) {
     preEventCallback = [instance, method](const State& currentState, const Event& event) {
       return (instance->*method)(currentState, event);
     };
   }
 
   // 设置状态进入回调
-  void setEnterStateCallback(EnterStateCallback callback) {
+  void SetEnterStateCallback(EnterStateCallback callback) {
     enterStateCallback = std::move(callback);
   }
 
   // 支持类成员函数作为状态进入回调
   template <typename T>
-  void setEnterStateCallback(T* instance, void (T::*method)(const std::vector<State>&)) {
+  void SetEnterStateCallback(T* instance, void (T::*method)(const std::vector<State>&)) {
     enterStateCallback = [instance, method](const std::vector<State>& states) {
       (instance->*method)(states);
     };
   }
 
   // 设置状态退出回调
-  void setExitStateCallback(ExitStateCallback callback) { exitStateCallback = std::move(callback); }
+  void SetExitStateCallback(ExitStateCallback callback) { exitStateCallback = std::move(callback); }
 
   // 支持类成员函数作为状态退出回调
   template <typename T>
-  void setExitStateCallback(T* instance, void (T::*method)(const std::vector<State>&)) {
+  void SetExitStateCallback(T* instance, void (T::*method)(const std::vector<State>&)) {
     exitStateCallback = [instance, method](const std::vector<State>& states) {
       (instance->*method)(states);
     };
   }
 
   // 设置事件回收回调
-  void setPostEventCallback(PostEventCallback callback) { postEventCallback = std::move(callback); }
+  void SetPostEventCallback(PostEventCallback callback) { postEventCallback = std::move(callback); }
 
   // 支持类成员函数作为事件回收回调
   template <typename T>
-  void setPostEventCallback(T* instance, void (T::*method)(const Event&, bool)) {
+  void SetPostEventCallback(T* instance, void (T::*method)(const Event&, bool)) {
     postEventCallback = [instance, method](const Event& event, bool handled) {
       (instance->*method)(event, handled);
     };
   }
 
   // 实际处理状态转换
-  void onTransition(const std::vector<State>& fromStates, const Event& event,
-                    const std::vector<State>& toStates) {
+  void OnTransition(const std::vector<State>& fromStates, const Event& event,
+                   const std::vector<State>& toStates) {
     if (transitionCallback) {
       transitionCallback(fromStates, event, toStates);
     }
   }
 
   // 实际处理事件预处理
-  bool onPreEvent(const State& currentState, const Event& event) {
+  bool OnPreEvent(const State& currentState, const Event& event) {
     if (preEventCallback) {
       return preEventCallback(currentState, event);
     }
@@ -141,21 +141,21 @@ class StateEventHandler final {
   }
 
   // 实际处理状态进入
-  void onEnterState(const std::vector<State>& states) {
+  void OnEnterState(const std::vector<State>& states) {
     if (enterStateCallback) {
       enterStateCallback(states);
     }
   }
 
   // 实际处理状态退出
-  void onExitState(const std::vector<State>& states) {
+  void OnExitState(const std::vector<State>& states) {
     if (exitStateCallback) {
       exitStateCallback(states);
     }
   }
 
   // 实际处理事件回收
-  void onPostEvent(const Event& event, bool handled) {
+  void OnPostEvent(const Event& event, bool handled) {
     if (postEventCallback) {
       postEventCallback(event, handled);
     }

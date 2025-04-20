@@ -49,21 +49,21 @@ enum class LogLevel { DEBUG, INFO, WARN, ERROR };
 
 class Logger {
  public:
-  static Logger& getInstance() {
+  static Logger& GetInstance() {
     static Logger instance;
     return instance;
   }
 
-  void setLogLevel(LogLevel level) { m_level = level; }
+  void SetLogLevel(LogLevel level) { level_ = level; }
 
-  LogLevel getLogLevel() const { return m_level; }
+  LogLevel GetLogLevel() const { return level_; }
 
-  void log(LogLevel level, const std::string& file, int line, const std::string& message) {
-    if (level < m_level) {
+  void Log(LogLevel level, const std::string& file, int line, const std::string& message) {
+    if (level < level_) {
       return;
     }
 
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> lock(mutex_);
 
     // 使用chrono获取当前时间，包括毫秒
     auto now = std::chrono::system_clock::now();
@@ -75,23 +75,23 @@ class Logger {
     auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count() % 1000;
 
     // 提取文件名，不显示完整路径
-    std::string fileName = extractFileName(file);
+    std::string fileName = ExtractFileName(file);
 
     std::cerr << "[" << std::setw(2) << std::setfill('0') << localTime->tm_hour << ":"
               << std::setw(2) << std::setfill('0') << localTime->tm_min << ":" << std::setw(2)
               << std::setfill('0') << localTime->tm_sec << "." << std::setw(3) << std::setfill('0')
               << millis << "] "  // 添加毫秒显示
-              << levelToString(level) << " "
+              << LevelToString(level) << " "
               << "[" << fileName << ":" << line << " - " << std::this_thread::get_id() << "] "
               << message << std::endl;
   }
 
  private:
-  Logger() : m_level(LogLevel::INFO) {}
+  Logger() : level_(LogLevel::INFO) {}
   Logger(const Logger&) = delete;
   Logger& operator=(const Logger&) = delete;
 
-  std::string levelToString(LogLevel level) const {
+  std::string LevelToString(LogLevel level) const {
     switch (level) {
       case LogLevel::DEBUG:
         return "[DEBUG]";
@@ -107,28 +107,28 @@ class Logger {
   }
 
   // 辅助函数：从完整路径中提取文件名
-  std::string extractFileName(const std::string& fullPath) const {
+  std::string ExtractFileName(const std::string& fullPath) const {
     size_t pos = fullPath.find_last_of("/\\");
     if (pos == std::string::npos)
       return fullPath;
     return fullPath.substr(pos + 1);
   }
 
-  LogLevel m_level;
-  std::mutex m_mutex;
+  LogLevel level_;
+  std::mutex mutex_;
 };
 
 }  // namespace smf
 
 // Initialization macro
-#define SMF_LOGGER_INIT(level) smf::Logger::getInstance().setLogLevel(level)
+#define SMF_LOGGER_INIT(level) smf::Logger::GetInstance().SetLogLevel(level)
 
 // Log macros for users
 #define SMF_LOGD(message) \
-  smf::Logger::getInstance().log(smf::LogLevel::DEBUG, __FILE__, __LINE__, message)
+  smf::Logger::GetInstance().Log(smf::LogLevel::DEBUG, __FILE__, __LINE__, message)
 #define SMF_LOGI(message) \
-  smf::Logger::getInstance().log(smf::LogLevel::INFO, __FILE__, __LINE__, message)
+  smf::Logger::GetInstance().Log(smf::LogLevel::INFO, __FILE__, __LINE__, message)
 #define SMF_LOGW(message) \
-  smf::Logger::getInstance().log(smf::LogLevel::WARN, __FILE__, __LINE__, message)
+  smf::Logger::GetInstance().Log(smf::LogLevel::WARN, __FILE__, __LINE__, message)
 #define SMF_LOGE(message) \
-  smf::Logger::getInstance().log(smf::LogLevel::ERROR, __FILE__, __LINE__, message)
+  smf::Logger::GetInstance().Log(smf::LogLevel::ERROR, __FILE__, __LINE__, message)

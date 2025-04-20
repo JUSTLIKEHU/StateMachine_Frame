@@ -8,8 +8,8 @@ class LightController {
   LightController() : powerOn(false) {}
 
   // 转换处理
-  void handleTransition(const std::vector<State>& fromStates, const Event& event,
-                        const std::vector<State>& toStates) {
+  void HandleTransition(const std::vector<State>& fromStates, const Event& event,
+                      const std::vector<State>& toStates) {
     (void)event;  // 防止未使用警告
 
     // 获取当前状态（层次结构中的第一个）
@@ -26,7 +26,7 @@ class LightController {
   }
 
   // 事件预处理
-  bool validateEvent(const State& state, const Event& event) {
+  bool ValidateEvent(const State& state, const Event& event) {
     SMF_LOGD("Controller: Validating event " + event.toString() + " in state " + state);
     // 例如，仅在灯开启时允许"ADJUST_BRIGHTNESS"事件
     if (event == "ADJUST_BRIGHTNESS" && state != "ON") {
@@ -37,7 +37,7 @@ class LightController {
   }
 
   // 状态进入
-  void onEnter(const std::vector<State>& states) {
+  void OnEnter(const std::vector<State>& states) {
     if (!states.empty()) {
       SMF_LOGD("Controller: Entered state " + states[0]);
       if (states[0] == "ON") {
@@ -48,35 +48,35 @@ class LightController {
   }
 
   // 状态退出
-  void onExit(const std::vector<State>& states) {
+  void OnExit(const std::vector<State>& states) {
     if (!states.empty()) {
       SMF_LOGD("Controller: Exited state " + states[0]);
     }
   }
 
   // 事件后处理
-  void afterEvent(const Event& event, bool handled) {
+  void AfterEvent(const Event& event, bool handled) {
     SMF_LOGD("Controller: Processed event " + event.toString() +
              (handled ? " successfully" : " but it was not handled"));
   }
 
-  bool isPowerOn() const { return powerOn; }
+  bool IsPowerOn() const { return powerOn; }
 
  private:
   bool powerOn;
 };
 
 // 更新示例函数，展示如何创建使用类成员函数的处理器
-inline std::shared_ptr<StateEventHandler> createMemberFunctionHandler() {
+inline std::shared_ptr<StateEventHandler> CreateMemberFunctionHandler() {
   auto controller = std::make_shared<LightController>();
   auto handler = std::make_shared<StateEventHandler>();
 
   // 绑定类成员函数作为回调
-  handler->setTransitionCallback(controller.get(), &LightController::handleTransition);
-  handler->setPreEventCallback(controller.get(), &LightController::validateEvent);
-  handler->setEnterStateCallback(controller.get(), &LightController::onEnter);
-  handler->setExitStateCallback(controller.get(), &LightController::onExit);
-  handler->setPostEventCallback(controller.get(), &LightController::afterEvent);
+  handler->SetTransitionCallback(controller.get(), &LightController::HandleTransition);
+  handler->SetPreEventCallback(controller.get(), &LightController::ValidateEvent);
+  handler->SetEnterStateCallback(controller.get(), &LightController::OnEnter);
+  handler->SetExitStateCallback(controller.get(), &LightController::OnExit);
+  handler->SetPostEventCallback(controller.get(), &LightController::AfterEvent);
 
   // 注意：这里我们返回了处理器，但要确保controller对象的生命周期必须超过处理器的使用时间
   // 在实际应用中，可能需要让控制器对象的所有权与处理器或状态机的生命周期绑定
@@ -84,11 +84,11 @@ inline std::shared_ptr<StateEventHandler> createMemberFunctionHandler() {
 }
 
 // 创建一个配置灯光状态处理逻辑的示例函数
-inline std::shared_ptr<StateEventHandler> createLightStateHandler() {
+inline std::shared_ptr<StateEventHandler> CreateLightStateHandler() {
   auto handler = std::make_shared<StateEventHandler>();
 
   // 设置转换回调
-  handler->setTransitionCallback([](const std::vector<State>& fromStates, const Event& event,
+  handler->SetTransitionCallback([](const std::vector<State>& fromStates, const Event& event,
                                     const std::vector<State>& toStates) {
     (void)event;  // 防止未使用警告
 
@@ -116,7 +116,7 @@ inline std::shared_ptr<StateEventHandler> createLightStateHandler() {
   });
 
   // 设置事件预处理回调
-  handler->setPreEventCallback([](const State& currentState, const Event& event) {
+  handler->SetPreEventCallback([](const State& currentState, const Event& event) {
     SMF_LOGD("Pre-processing event: " + event.toString() + " in state: " + currentState);
     if (event == "unsupported_event") {
       SMF_LOGW("Rejecting unsupported event!");
@@ -126,7 +126,7 @@ inline std::shared_ptr<StateEventHandler> createLightStateHandler() {
   });
 
   // 设置状态进入回调
-  handler->setEnterStateCallback([](const std::vector<State>& states) {
+  handler->SetEnterStateCallback([](const std::vector<State>& states) {
     if (states.empty())
       return;
 
@@ -139,7 +139,7 @@ inline std::shared_ptr<StateEventHandler> createLightStateHandler() {
   });
 
   // 设置状态退出回调
-  handler->setExitStateCallback([](const std::vector<State>& states) {
+  handler->SetExitStateCallback([](const std::vector<State>& states) {
     if (states.empty())
       return;
 
@@ -150,7 +150,7 @@ inline std::shared_ptr<StateEventHandler> createLightStateHandler() {
   });
 
   // 设置事件回收回调
-  handler->setPostEventCallback([](const Event& event, bool handled) {
+  handler->SetPostEventCallback([](const Event& event, bool handled) {
     SMF_LOGD("Post-processing event: " + event.toString() +
              (handled ? " (handled)" : " (not handled)"));
   });

@@ -69,22 +69,22 @@ class Event {
       : name_(name), durationConditions_(conditionValues) {}
 
   // 获取事件名称
-  const std::string& getName() const { return name_; }
+  const std::string& GetName() const { return name_; }
 
   // 获取条件值
-  int getConditionValue(const std::string& conditionName) const {
+  int GetConditionValue(const std::string& conditionName) const {
     auto it = durationConditions_.find(conditionName);
     return it != durationConditions_.end() ? it->second.value : 0;
   }
 
-  void setCondition(const std::string& conditionName, int value, int durationMs = 0) {
+  void SetCondition(const std::string& conditionName, int value, int durationMs = 0) {
     if (conditionName.empty() || value < 0) {
       SMF_LOGE("conditionName is empty or value is less than 0");
     }
     durationConditions_[conditionName] = {value, durationMs};
   }
 
-  void clear() { durationConditions_.clear(); }
+  void Clear() { durationConditions_.clear(); }
 
   // 将事件转换为字符串（隐式转换）
   operator std::string() const { return name_; }

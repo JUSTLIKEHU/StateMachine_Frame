@@ -70,137 +70,137 @@ class FiniteStateMachine {
   FiniteStateMachine() : running_(false), initialized_(false) {}
   ~FiniteStateMachine() {
     // 合并了停止定时器和状态机的逻辑
-    stop();
+    Stop();
   }
 
   // 初始化接口
   bool Init(const std::string& configFile);
 
   // 启动状态机
-  bool start();
+  bool Start();
 
   // 停止状态机
-  void stop();
+  void Stop();
 
   // 处理事件（线程安全）
-  void handleEvent(const Event& event);
+  void HandleEvent(const Event& event);
 
   // 设置状态转移回调 - 函数对象版本
-  void setTransitionCallback(StateEventHandler::TransitionCallback callback);
+  void SetTransitionCallback(StateEventHandler::TransitionCallback callback);
 
   // 设置状态转移回调 - 类成员函数版本
   template <typename T>
-  void setTransitionCallback(T* instance, void (T::*method)(const std::vector<State>&, const Event&,
+  void SetTransitionCallback(T* instance, void (T::*method)(const std::vector<State>&, const Event&,
                                                             const std::vector<State>&)) {
     if (!state_event_handler_) {
       state_event_handler_ = std::make_shared<StateEventHandler>();
     }
-    state_event_handler_->setTransitionCallback(instance, method);
+    state_event_handler_->SetTransitionCallback(instance, method);
   }
 
   // 设置事件预处理回调 - 函数对象版本
-  void setPreEventCallback(StateEventHandler::PreEventCallback callback);
+  void SetPreEventCallback(StateEventHandler::PreEventCallback callback);
 
   // 设置事件预处理回调 - 类成员函数版本
   template <typename T>
-  void setPreEventCallback(T* instance, bool (T::*method)(const State&, const Event&)) {
+  void SetPreEventCallback(T* instance, bool (T::*method)(const State&, const Event&)) {
     if (!state_event_handler_) {
       state_event_handler_ = std::make_shared<StateEventHandler>();
     }
-    state_event_handler_->setPreEventCallback(instance, method);
+    state_event_handler_->SetPreEventCallback(instance, method);
   }
 
   // 设置状态进入回调 - 函数对象版本
-  void setEnterStateCallback(StateEventHandler::EnterStateCallback callback);
+  void SetEnterStateCallback(StateEventHandler::EnterStateCallback callback);
 
   // 设置状态进入回调 - 类成员函数版本
   template <typename T>
-  void setEnterStateCallback(T* instance, void (T::*method)(const std::vector<State>&)) {
+  void SetEnterStateCallback(T* instance, void (T::*method)(const std::vector<State>&)) {
     if (!state_event_handler_) {
       state_event_handler_ = std::make_shared<StateEventHandler>();
     }
-    state_event_handler_->setEnterStateCallback(instance, method);
+    state_event_handler_->SetEnterStateCallback(instance, method);
   }
 
   // 设置状态退出回调 - 函数对象版本
-  void setExitStateCallback(StateEventHandler::ExitStateCallback callback);
+  void SetExitStateCallback(StateEventHandler::ExitStateCallback callback);
 
   // 设置状态退出回调 - 类成员函数版本
   template <typename T>
-  void setExitStateCallback(T* instance, void (T::*method)(const std::vector<State>&)) {
+  void SetExitStateCallback(T* instance, void (T::*method)(const std::vector<State>&)) {
     if (!state_event_handler_) {
       state_event_handler_ = std::make_shared<StateEventHandler>();
     }
-    state_event_handler_->setExitStateCallback(instance, method);
+    state_event_handler_->SetExitStateCallback(instance, method);
   }
 
   // 设置事件回收回调 - 函数对象版本
-  void setPostEventCallback(StateEventHandler::PostEventCallback callback);
+  void SetPostEventCallback(StateEventHandler::PostEventCallback callback);
 
   // 设置事件回收回调 - 类成员函数版本
   template <typename T>
-  void setPostEventCallback(T* instance, void (T::*method)(const Event&, bool)) {
+  void SetPostEventCallback(T* instance, void (T::*method)(const Event&, bool)) {
     if (!state_event_handler_) {
       state_event_handler_ = std::make_shared<StateEventHandler>();
     }
-    state_event_handler_->setPostEventCallback(instance, method);
+    state_event_handler_->SetPostEventCallback(instance, method);
   }
 
   // 继续支持原有的接口，但现在作为兼容层
-  void setStateEventHandler(std::shared_ptr<StateEventHandler> handler);
+  void SetStateEventHandler(std::shared_ptr<StateEventHandler> handler);
 
   // 添加状态
-  void addState(const State& name, const State& parent = "");
+  void AddState(const State& name, const State& parent = "");
 
   // 添加状态转移规则
-  void addTransition(const TransitionRule& rule);
+  void AddTransition(const TransitionRule& rule);
 
   // 设置初始状态
-  void setInitialState(const State& state);
+  void SetInitialState(const State& state);
 
   // 获取当前状态
-  State getCurrentState() const;
+  State GetCurrentState() const;
 
   // 修改设置条件值接口为异步处理
-  void setConditionValue(const std::string& name, int value);
+  void SetConditionValue(const std::string& name, int value);
 
   // 从 JSON 文件加载状态机配置
-  void loadFromJSON(const std::string& filepath);
+  void LoadFromJSON(const std::string& filepath);
 
  private:
   // 事件处理循环 - 专注于处理事件队列
-  void eventLoop();
+  void EventLoop();
 
   // 条件处理循环 - 专注于处理条件更新
-  void conditionLoop();
+  void ConditionLoop();
 
   // 获取状态及其所有父状态（从子到父的顺序）
-  std::vector<State> getStateHierarchy(const State& state) const;
+  std::vector<State> GetStateHierarchy(const State& state) const;
 
   // 处理单个事件
-  void processEvent(const Event& event);
+  void ProcessEvent(const Event& event);
 
   // 检查条件触发规则 - 这个方法不再使用
   // 保留代码但标记为废弃，供参考
-  void checkConditionTransitions();
+  void CheckConditionTransitions();
 
   // 新增：打印满足的条件
-  void printSatisfiedConditions(const std::vector<Condition>& conditions);
+  void PrintSatisfiedConditions(const std::vector<Condition>& conditions);
 
   // 检查条件是否满足
-  bool checkConditions(const std::vector<Condition>& conditions, const std::string& op);
+  bool CheckConditions(const std::vector<Condition>& conditions, const std::string& op);
 
   // 处理条件更新队列
-  void processConditionUpdates(std::queue<ConditionUpdateEvent>& conditionUpdateQueue);
+  void ProcessConditionUpdates(std::queue<ConditionUpdateEvent>& conditionUpdateQueue);
 
   // 添加新方法：检查事件条件
-  void triggerEvent();
+  void TriggerEvent();
 
   // 新增定时器循环处理
-  void timerLoop();
+  void TimerLoop();
 
   // 事件触发循环
-  void eventTriggerLoop();
+  void EventTriggerLoop();
 
   // 存储所有状态
   std::unordered_map<State, StateInfo> states_;

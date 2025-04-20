@@ -12,54 +12,54 @@ void testMemberFunctionCallbacks() {
   auto controller = new smf::LightController();  // 注意：这里只是演示，实际应用中应当使用智能指针
 
   // 方式1：直接使用setXXXCallback接口
-  fsm.setTransitionCallback(controller, &smf::LightController::handleTransition);
-  fsm.setPreEventCallback(controller, &smf::LightController::validateEvent);
-  fsm.setEnterStateCallback(controller, &smf::LightController::onEnter);
-  fsm.setExitStateCallback(controller, &smf::LightController::onExit);
-  fsm.setPostEventCallback(controller, &smf::LightController::afterEvent);
+  fsm.SetTransitionCallback(controller, &smf::LightController::HandleTransition);
+  fsm.SetPreEventCallback(controller, &smf::LightController::ValidateEvent);
+  fsm.SetEnterStateCallback(controller, &smf::LightController::OnEnter);
+  fsm.SetExitStateCallback(controller, &smf::LightController::OnExit);
+  fsm.SetPostEventCallback(controller, &smf::LightController::AfterEvent);
 
   // 或者方式2：先创建处理器，然后设置
   /*
   auto handler = std::make_shared<smf::StateEventHandler>();
-  handler->setTransitionCallback(controller, &smf::LightController::handleTransition);
-  handler->setPreEventCallback(controller, &smf::LightController::validateEvent);
+  handler->SetTransitionCallback(controller, &smf::LightController::HandleTransition);
+  handler->SetPreEventCallback(controller, &smf::LightController::ValidateEvent);
   // ... 其他回调设置
-  fsm.setStateEventHandler(handler);
+  fsm.SetStateEventHandler(handler);
   */
 
   // 初始化和运行
   fsm.Init("../../config/fsm_config.json");
-  fsm.start();
+  fsm.Start();
 
   // 触发一些事件和条件
-  fsm.handleEvent("TURN_ON");
-  fsm.handleEvent("ADJUST_BRIGHTNESS");  // 这应该会被validateEvent方法处理
+  fsm.HandleEvent("TURN_ON");
+  fsm.HandleEvent("ADJUST_BRIGHTNESS");  // 这应该会被validateEvent方法处理
 
   // 停止状态机
-  fsm.stop();
+  fsm.Stop();
 
   // 检查控制器状态
-  SMF_LOGI("Light power state: " + std::string(controller->isPowerOn() ? "ON" : "OFF"));
+  SMF_LOGI("Light power state: " + std::string(controller->IsPowerOn() ? "ON" : "OFF"));
 
   delete controller;  // 清理资源（实际应用中使用智能指针避免手动释放）
 }
 
 void eventThread(smf::FiniteStateMachine& fsm) {
   for (int i = 0; i < 5; ++i) {
-    fsm.handleEvent("TURN_ON");
+    fsm.HandleEvent("TURN_ON");
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    fsm.handleEvent("TURN_OFF");
+    fsm.HandleEvent("TURN_OFF");
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 }
 
 void conditionThread(smf::FiniteStateMachine& fsm) {
   for (int i = 0; i < 5; ++i) {
-    fsm.setConditionValue("is_powered", 50);
-    fsm.setConditionValue("is_connected", 75);
+    fsm.SetConditionValue("is_powered", 50);
+    fsm.SetConditionValue("is_connected", 75);
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
-    fsm.setConditionValue("is_powered", 150);
-    fsm.setConditionValue("is_connected", 150);
+    fsm.SetConditionValue("is_powered", 150);
+    fsm.SetConditionValue("is_connected", 150);
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
   }
 }
@@ -73,12 +73,12 @@ int main() {
   // 选择回调设置方式
 
   // 选项1: 使用Lambda函数创建的回调
-  auto handler = smf::createLightStateHandler();
-  fsm.setStateEventHandler(handler);
+  auto handler = smf::CreateLightStateHandler();
+  fsm.SetStateEventHandler(handler);
 
   // 选项2: 使用类成员函数创建的回调
-  // auto handler = smf::createMemberFunctionHandler();
-  // fsm.setStateEventHandler(handler);
+  // auto handler = smf::CreateMemberFunctionHandler();
+  // fsm.SetStateEventHandler(handler);
 
   // 选项3: 直接测试成员函数回调（单独函数）
   // testMemberFunctionCallbacks();
@@ -90,67 +90,67 @@ int main() {
       return 1;
     }
 
-    if (!fsm.start()) {
+    if (!fsm.Start()) {
       SMF_LOGE("Failed to start state machine");
       return 1;
     }
 
-    SMF_LOGI("Initial state: " + fsm.getCurrentState());
+    SMF_LOGI("Initial state: " + fsm.GetCurrentState());
 
     // Test OFF -> IDLE transition with duration
     // while (true) {
     //   static int count = 0;
     //   if (++count % 2 == 1) {
-    //     fsm.setConditionValue("is_powered", 1);
+    //     fsm.SetConditionValue("is_powered", 1);
     //     SMF_LOGI("Setting is_powered=1...");
     //     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
     //   } else {
-    //     fsm.setConditionValue("is_powered", 0);
+    //     fsm.SetConditionValue("is_powered", 0);
     //     SMF_LOGI("Setting is_powered=0...");
     //     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
     //   }
-    //   SMF_LOGE("Current state: " + fsm.getCurrentState());
+    //   SMF_LOGE("Current state: " + fsm.GetCurrentState());
     // }
     SMF_LOGI("Setting is_powered=1...");
-    fsm.setConditionValue("is_powered", 1);
-    SMF_LOGI("Current state: " + fsm.getCurrentState());
+    fsm.SetConditionValue("is_powered", 1);
+    SMF_LOGI("Current state: " + fsm.GetCurrentState());
 
     // 等待1100ms (比配置的1000ms多一点)
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
-    SMF_LOGI("After waiting for duration: " + fsm.getCurrentState());
+    SMF_LOGI("After waiting for duration: " + fsm.GetCurrentState());
 
     // Test IDLE -> STAND_BY transition
-    fsm.setConditionValue("service_ready", 1);
-    fsm.setConditionValue("is_connected", 1);
+    fsm.SetConditionValue("service_ready", 1);
+    fsm.SetConditionValue("is_connected", 1);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    SMF_LOGI("After setting service_ready=1 and is_connected=1: " + fsm.getCurrentState());
+    SMF_LOGI("After setting service_ready=1 and is_connected=1: " + fsm.GetCurrentState());
 
     // Test STAND_BY -> ACTIVE transition
-    fsm.handleEvent("START");
+    fsm.HandleEvent("START");
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    SMF_LOGI("After START event: " + fsm.getCurrentState());
+    SMF_LOGI("After START event: " + fsm.GetCurrentState());
 
     // Test ACTIVE -> PAUSED transition
-    fsm.setConditionValue("is_paused", 1);
+    fsm.SetConditionValue("is_paused", 1);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    SMF_LOGI("After setting is_paused=1: " + fsm.getCurrentState());
+    SMF_LOGI("After setting is_paused=1: " + fsm.GetCurrentState());
 
     // Test PAUSED -> ACTIVE transition
-    fsm.setConditionValue("is_paused", 0);
+    fsm.SetConditionValue("is_paused", 0);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    SMF_LOGI("After setting is_paused=0: " + fsm.getCurrentState());
+    SMF_LOGI("After setting is_paused=0: " + fsm.GetCurrentState());
 
     // Test ACTIVE -> STAND_BY transition
-    fsm.handleEvent("USER_STOP");
+    fsm.HandleEvent("USER_STOP");
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    SMF_LOGI("After USER_STOP event: " + fsm.getCurrentState());
+    SMF_LOGI("After USER_STOP event: " + fsm.GetCurrentState());
 
     // // Test STAND_BY -> IDLE transition
-    // fsm.setConditionValue("service_ready", 0);
+    // fsm.SetConditionValue("service_ready", 0);
     // std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    // SMF_LOGI("After setting service_ready=0: " + fsm.getCurrentState());
+    // SMF_LOGI("After setting service_ready=0: " + fsm.GetCurrentState());
 
-    SMF_LOGI("Final state: " + fsm.getCurrentState());
+    SMF_LOGI("Final state: " + fsm.GetCurrentState());
 
     while (true) {
       // Keep the main thread alive to allow the worker threads to execute
@@ -158,10 +158,10 @@ int main() {
       // In a real-world application, you should use a condition variable to wait for a signal
       // from the worker threads before proceeding with any other
       std::this_thread::sleep_for(std::chrono::seconds(1));
-      SMF_LOGI("Current state: " + fsm.getCurrentState());
+      SMF_LOGI("Current state: " + fsm.GetCurrentState());
     }
 
-    fsm.stop();
+    fsm.Stop();
   } catch (const std::exception& e) {
     SMF_LOGE("Error: " + std::string(e.what()));
   }

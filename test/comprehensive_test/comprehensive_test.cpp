@@ -477,11 +477,11 @@ void runComprehensiveTest() {
   auto controller = std::make_shared<SmartHomeController>();
 
   // 设置回调
-  fsm.setTransitionCallback(controller.get(), &SmartHomeController::onTransition);
-  fsm.setPreEventCallback(controller.get(), &SmartHomeController::onPreEvent);
-  fsm.setEnterStateCallback(controller.get(), &SmartHomeController::onEnterState);
-  fsm.setExitStateCallback(controller.get(), &SmartHomeController::onExitState);
-  fsm.setPostEventCallback(controller.get(), &SmartHomeController::onPostEvent);
+  fsm.SetTransitionCallback(controller.get(), &SmartHomeController::onTransition);
+  fsm.SetPreEventCallback(controller.get(), &SmartHomeController::onPreEvent);
+  fsm.SetEnterStateCallback(controller.get(), &SmartHomeController::onEnterState);
+  fsm.SetExitStateCallback(controller.get(), &SmartHomeController::onExitState);
+  fsm.SetPostEventCallback(controller.get(), &SmartHomeController::onPostEvent);
 
   // 初始化并启动状态机
   if (!fsm.Init(configPath)) {
@@ -489,132 +489,132 @@ void runComprehensiveTest() {
     return;
   }
 
-  if (!fsm.start()) {
+  if (!fsm.Start()) {
     SMF_LOGE("状态机启动失败！");
     return;
   }
 
   SMF_LOGI("\n=== 状态机已初始化和启动 ===");
-  SMF_LOGI("- 初始状态: " + fsm.getCurrentState());
+  SMF_LOGI("- 初始状态: " + fsm.GetCurrentState());
 
   SMF_LOGI("\n=== 测试 1: 条件触发状态转换（带持续时间） ===");
   SMF_LOGI("设置 power_level=50 (需持续1秒)...");
-  fsm.setConditionValue("power_level", 50);
+  fsm.SetConditionValue("power_level", 50);
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
-  SMF_LOGI("500ms 后，状态: " + fsm.getCurrentState());
+  SMF_LOGI("500ms 后，状态: " + fsm.GetCurrentState());
   std::this_thread::sleep_for(std::chrono::milliseconds(600));
-  SMF_LOGI("再过 600ms 后，状态: " + fsm.getCurrentState());
+  SMF_LOGI("再过 600ms 后，状态: " + fsm.GetCurrentState());
 
   SMF_LOGI("\n=== 测试 2: 普通条件触发转换 ===");
   SMF_LOGI("设置 network_available=1...");
-  fsm.setConditionValue("network_available", 1);
+  fsm.SetConditionValue("network_available", 1);
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  SMF_LOGI("当前状态: " + fsm.getCurrentState());
+  SMF_LOGI("当前状态: " + fsm.GetCurrentState());
   SMF_LOGI(controller->getStatusReport());
 
   SMF_LOGI("\n=== 测试 3: 事件触发转换 ===");
   SMF_LOGI("发送事件: START_FULL_OPERATION...");
-  fsm.handleEvent("START_FULL_OPERATION");
+  fsm.HandleEvent("START_FULL_OPERATION");
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  SMF_LOGI("当前状态: " + fsm.getCurrentState());
+  SMF_LOGI("当前状态: " + fsm.GetCurrentState());
 
   SMF_LOGI("\n=== 测试 4: 特定状态下的事件触发 ===");
   SMF_LOGI("发送事件: ACTIVATE_CLIMATE...");
-  fsm.handleEvent("ACTIVATE_CLIMATE");
+  fsm.HandleEvent("ACTIVATE_CLIMATE");
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  SMF_LOGI("当前状态: " + fsm.getCurrentState());
+  SMF_LOGI("当前状态: " + fsm.GetCurrentState());
 
   SMF_LOGI("发送事件: ACTIVATE_LIGHTING (在不同状态层次下)...");
-  fsm.handleEvent("ACTIVATE_LIGHTING");
+  fsm.HandleEvent("ACTIVATE_LIGHTING");
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  SMF_LOGI("当前状态: " + fsm.getCurrentState());
+  SMF_LOGI("当前状态: " + fsm.GetCurrentState());
 
   SMF_LOGI("返回上一级状态...");
-  fsm.handleEvent("DEACTIVATE_LIGHTING");
+  fsm.HandleEvent("DEACTIVATE_LIGHTING");
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  SMF_LOGI("当前状态: " + fsm.getCurrentState());
+  SMF_LOGI("当前状态: " + fsm.GetCurrentState());
 
   SMF_LOGI("\n=== 测试 5: 条件变化不满足时的状态保持 ===");
   SMF_LOGI("设置 power_level=5 (但不会立即触发转换)...");
   controller->decreasePower();  // 降低电源水平
-  fsm.setConditionValue("power_level", controller->getPowerLevel());
+  fsm.SetConditionValue("power_level", controller->getPowerLevel());
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  SMF_LOGI("当前状态: " + fsm.getCurrentState());
+  SMF_LOGI("当前状态: " + fsm.GetCurrentState());
   SMF_LOGI(controller->getStatusReport());
 
   SMF_LOGI("\n=== 测试 6: 事件拒绝处理逻辑 ===");
   SMF_LOGI("先关闭系统...");
-  fsm.setConditionValue("power_level", 0);  // 设置电源为0
+  fsm.SetConditionValue("power_level", 0);  // 设置电源为0
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
-  SMF_LOGI("当前状态: " + fsm.getCurrentState());
+  SMF_LOGI("当前状态: " + fsm.GetCurrentState());
 
   SMF_LOGI("在OFF状态下发送ACTIVATE_SECURITY事件 (应被拒绝)...");
-  fsm.handleEvent("ACTIVATE_SECURITY");
+  fsm.HandleEvent("ACTIVATE_SECURITY");
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  SMF_LOGI("当前状态: " + fsm.getCurrentState());
+  SMF_LOGI("当前状态: " + fsm.GetCurrentState());
 
   SMF_LOGI("\n=== 测试 7: 恢复系统并测试安全模式 ===");
   SMF_LOGI("重新设置 power_level=60...");
   controller->increasePower();  // 恢复电源
-  fsm.setConditionValue("power_level", controller->getPowerLevel());
+  fsm.SetConditionValue("power_level", controller->getPowerLevel());
   std::this_thread::sleep_for(std::chrono::milliseconds(1200));  // 等待持续时间条件满足
 
   SMF_LOGI("设置网络连接...");
-  fsm.setConditionValue("network_available", 1);
+  fsm.SetConditionValue("network_available", 1);
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-  SMF_LOGI("当前状态: " + fsm.getCurrentState());
+  SMF_LOGI("当前状态: " + fsm.GetCurrentState());
 
   SMF_LOGI("激活安全模式...");
-  fsm.handleEvent("ACTIVATE_SECURITY");
+  fsm.HandleEvent("ACTIVATE_SECURITY");
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  SMF_LOGI("当前状态: " + fsm.getCurrentState());
+  SMF_LOGI("当前状态: " + fsm.GetCurrentState());
   SMF_LOGI(controller->getStatusReport());
 
   SMF_LOGI("\n=== 测试 8: 在安全模式下测试无效事件 ===");
   SMF_LOGI("尝试进入节能模式 (应被拒绝)...");
-  fsm.handleEvent("ENTER_ENERGY_SAVING");
+  fsm.HandleEvent("ENTER_ENERGY_SAVING");
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  SMF_LOGI("当前状态: " + fsm.getCurrentState());
+  SMF_LOGI("当前状态: " + fsm.GetCurrentState());
 
   SMF_LOGI("\n=== 测试 9: 复杂状态序列 ===");
   SMF_LOGI("退出安全模式...");
-  fsm.handleEvent("DEACTIVATE_SECURITY");
+  fsm.HandleEvent("DEACTIVATE_SECURITY");
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   SMF_LOGI("进入节能模式...");
-  fsm.handleEvent("ENTER_ENERGY_SAVING");
+  fsm.HandleEvent("ENTER_ENERGY_SAVING");
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  SMF_LOGI("当前状态: " + fsm.getCurrentState());
+  SMF_LOGI("当前状态: " + fsm.GetCurrentState());
 
   SMF_LOGI("退出节能模式，进入完全运行状态...");
-  fsm.handleEvent("EXIT_ENERGY_SAVING");
+  fsm.HandleEvent("EXIT_ENERGY_SAVING");
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  fsm.handleEvent("START_FULL_OPERATION");
+  fsm.HandleEvent("START_FULL_OPERATION");
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   SMF_LOGI("依次激活温控和照明系统...");
-  fsm.handleEvent("ACTIVATE_CLIMATE");
+  fsm.HandleEvent("ACTIVATE_CLIMATE");
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  fsm.handleEvent("DEACTIVATE_CLIMATE");
+  fsm.HandleEvent("DEACTIVATE_CLIMATE");
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  fsm.handleEvent("ACTIVATE_LIGHTING");
+  fsm.HandleEvent("ACTIVATE_LIGHTING");
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   SMF_LOGI("模拟网络断开...");
-  fsm.setConditionValue("network_available", 0);
+  fsm.SetConditionValue("network_available", 0);
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
-  SMF_LOGI("当前状态: " + fsm.getCurrentState());
+  SMF_LOGI("当前状态: " + fsm.GetCurrentState());
 
   SMF_LOGI("\n=== 测试 10: 关闭系统 ===");
   SMF_LOGI("将电源水平设置为0...");
-  fsm.setConditionValue("power_level", 0);
+  fsm.SetConditionValue("power_level", 0);
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
-  SMF_LOGI("最终状态: " + fsm.getCurrentState());
+  SMF_LOGI("最终状态: " + fsm.GetCurrentState());
   SMF_LOGI(controller->getStatusReport());
 
   // 停止状态机
-  fsm.stop();
+  fsm.Stop();
   SMF_LOGI("\n状态机已停止。全面测试完成！");
 }
 
