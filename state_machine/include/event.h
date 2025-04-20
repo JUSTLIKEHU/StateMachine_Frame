@@ -3,8 +3,9 @@
  * @brief Event definition
  * @date 2025-04-13
  * @details This file contains the definition of the Event class, which represents an event in the
- *          state machine. The Event class includes event name, conditions, and other properties. It also
- *          includes methods for setting and getting condition values, and for printing event information.
+ *          state machine. The Event class includes event name, conditions, and other properties. It
+ *          also includes methods for setting and getting condition values, and for printing event
+ *          information.
  * @author xiaokui.hu
  * @version 1.0
  * @note This file is part of the state machine framework and should be included in
@@ -83,9 +84,7 @@ class Event {
     durationConditions_[conditionName] = {value, durationMs};
   }
 
-  void clear() {
-    durationConditions_.clear();
-  }
+  void clear() { durationConditions_.clear(); }
 
   // 将事件转换为字符串（隐式转换）
   operator std::string() const { return name_; }

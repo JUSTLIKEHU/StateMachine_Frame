@@ -8,16 +8,16 @@
 // 演示如何直接使用类成员函数作为回调
 void testMemberFunctionCallbacks() {
   smf::FiniteStateMachine fsm;
-  
-  auto controller = new smf::LightController(); // 注意：这里只是演示，实际应用中应当使用智能指针
-  
+
+  auto controller = new smf::LightController();  // 注意：这里只是演示，实际应用中应当使用智能指针
+
   // 方式1：直接使用setXXXCallback接口
   fsm.setTransitionCallback(controller, &smf::LightController::handleTransition);
   fsm.setPreEventCallback(controller, &smf::LightController::validateEvent);
   fsm.setEnterStateCallback(controller, &smf::LightController::onEnter);
   fsm.setExitStateCallback(controller, &smf::LightController::onExit);
   fsm.setPostEventCallback(controller, &smf::LightController::afterEvent);
-  
+
   // 或者方式2：先创建处理器，然后设置
   /*
   auto handler = std::make_shared<smf::StateEventHandler>();
@@ -26,22 +26,22 @@ void testMemberFunctionCallbacks() {
   // ... 其他回调设置
   fsm.setStateEventHandler(handler);
   */
-  
+
   // 初始化和运行
   fsm.Init("../../config/fsm_config.json");
   fsm.start();
-  
+
   // 触发一些事件和条件
   fsm.handleEvent("TURN_ON");
-  fsm.handleEvent("ADJUST_BRIGHTNESS"); // 这应该会被validateEvent方法处理
-  
+  fsm.handleEvent("ADJUST_BRIGHTNESS");  // 这应该会被validateEvent方法处理
+
   // 停止状态机
   fsm.stop();
-  
+
   // 检查控制器状态
   SMF_LOGI("Light power state: " + std::string(controller->isPowerOn() ? "ON" : "OFF"));
-  
-  delete controller; // 清理资源（实际应用中使用智能指针避免手动释放）
+
+  delete controller;  // 清理资源（实际应用中使用智能指针避免手动释放）
 }
 
 void eventThread(smf::FiniteStateMachine& fsm) {
@@ -67,22 +67,22 @@ void conditionThread(smf::FiniteStateMachine& fsm) {
 int main() {
   // 初始化日志系统
   SMF_LOGGER_INIT(smf::LogLevel::DEBUG);
-  
+
   smf::FiniteStateMachine fsm;
 
   // 选择回调设置方式
-  
+
   // 选项1: 使用Lambda函数创建的回调
   auto handler = smf::createLightStateHandler();
   fsm.setStateEventHandler(handler);
-  
+
   // 选项2: 使用类成员函数创建的回调
-  //auto handler = smf::createMemberFunctionHandler();
-  //fsm.setStateEventHandler(handler);
-  
+  // auto handler = smf::createMemberFunctionHandler();
+  // fsm.setStateEventHandler(handler);
+
   // 选项3: 直接测试成员函数回调（单独函数）
-  //testMemberFunctionCallbacks();
-  //return 0;
+  // testMemberFunctionCallbacks();
+  // return 0;
 
   try {
     if (!fsm.Init("../../config/fsm_config.json")) {

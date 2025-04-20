@@ -151,7 +151,8 @@ inline std::shared_ptr<StateEventHandler> createLightStateHandler() {
 
   // 设置事件回收回调
   handler->setPostEventCallback([](const Event& event, bool handled) {
-    SMF_LOGD("Post-processing event: " + event.toString() + (handled ? " (handled)" : " (not handled)"));
+    SMF_LOGD("Post-processing event: " + event.toString() +
+             (handled ? " (handled)" : " (not handled)"));
   });
 
   return handler;

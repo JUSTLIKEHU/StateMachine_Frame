@@ -56,11 +56,11 @@ struct Condition {
 };
 
 struct ConditionValue {
-  std::string name;  // 条件名称
-  int value;         // 条件值
-  std::chrono::steady_clock::time_point lastUpdateTime;  // 最后一次更新时间
+  std::string name;                                       // 条件名称
+  int value;                                              // 条件值
+  std::chrono::steady_clock::time_point lastUpdateTime;   // 最后一次更新时间
   std::chrono::steady_clock::time_point lastChangedTime;  // 上次变化时间
-  bool isTriggered;  // 是否已触发
+  bool isTriggered;                                       // 是否已触发
 };
 
 // 状态转移规则
@@ -89,7 +89,7 @@ struct ConditionUpdateEvent {
 // 在ConditionUpdateEvent结构体后添加定时条件结构体
 struct DurationCondition {
   std::string name;
-  int value;  // 添加值字段，用于跟踪触发条件时的值
+  int value;     // 添加值字段，用于跟踪触发条件时的值
   int duration;  // 记录持续时间，单位为毫秒，用于定时器是否满足
   std::chrono::steady_clock::time_point expiryTime;
 };

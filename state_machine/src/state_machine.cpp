@@ -3,8 +3,9 @@
  *@brief  State machine implementation
  *@author xiaokui.hu
  *@date   2025-04-13
- *@details This file contains the implementation of the FiniteStateMachine class, which implements a finite state machine.
-*/
+ *@details This file contains the implementation of the FiniteStateMachine class, which implements a
+ *         finite state machine.
+ */
 
 /**
  * MIT License
@@ -30,7 +31,6 @@
  * SOFTWARE.
  */
 
-
 #include "state_machine.h"
 #include <mutex>
 #include "logger.h"
@@ -40,7 +40,7 @@ namespace smf {
 bool FiniteStateMachine::Init(const std::string& configFile) {
   try {
     loadFromJSON(configFile);
-    initialized = true;
+    initialized_ = true;
     return true;
   } catch (const std::exception& e) {
     SMF_LOGE("Initialization failed: " + std::string(e.what()));
@@ -49,105 +49,105 @@ bool FiniteStateMachine::Init(const std::string& configFile) {
 }
 
 bool FiniteStateMachine::start() {
-  if (!initialized) {
+  if (!initialized_) {
     SMF_LOGE("State machine not initialized!");
     return false;
   }
 
-  if (running) {
+  if (running_) {
     SMF_LOGW("State machine already running!");
     return false;
   }
 
-  running = true;
-  eventThread = std::thread(&FiniteStateMachine::eventLoop, this);
-  eventTriggerThread = std::thread(&FiniteStateMachine::eventTriggerLoop, this);
-  conditionThread = std::thread(&FiniteStateMachine::conditionLoop, this);
-  timerThread = std::thread(&FiniteStateMachine::timerLoop, this);
+  running_ = true;
+  event_thread_ = std::thread(&FiniteStateMachine::eventLoop, this);
+  event_trigger_thread_ = std::thread(&FiniteStateMachine::eventTriggerLoop, this);
+  condition_thread_ = std::thread(&FiniteStateMachine::conditionLoop, this);
+  timer_thread_ = std::thread(&FiniteStateMachine::timerLoop, this);
   return true;
 }
 
 void FiniteStateMachine::stop() {
-  running = false;
+  running_ = false;
   // 通知所有等待中的线程
-  eventCV.notify_one();
-  eventTriggerCV.notify_one();
+  event_cv_.notify_one();
+  event_trigger_cv_.notify_one();
   condition_update_cv_.notify_one();
-  timerCV.notify_one();
+  timer_cv_.notify_one();
 
   // 等待线程结束
-  if (timerThread.joinable()) {
-    timerThread.join();
+  if (timer_thread_.joinable()) {
+    timer_thread_.join();
   }
-  if (conditionThread.joinable()) {
-    conditionThread.join();
+  if (condition_thread_.joinable()) {
+    condition_thread_.join();
   }
-  if (eventThread.joinable()) {
-    eventThread.join();
+  if (event_thread_.joinable()) {
+    event_thread_.join();
   }
-  if (eventTriggerThread.joinable()) {
-    eventTriggerThread.join();
+  if (event_trigger_thread_.joinable()) {
+    event_trigger_thread_.join();
   }
 }
 
 void FiniteStateMachine::handleEvent(const Event& event) {
-  std::lock_guard<std::mutex> lock(eventMutex);
-  eventQueue.push(event);
-  eventCV.notify_one();
+  std::lock_guard<std::mutex> lock(event_mutex_);
+  event_queue_.push(event);
+  event_cv_.notify_one();
 }
 
 void FiniteStateMachine::setTransitionCallback(StateEventHandler::TransitionCallback callback) {
-  if (!stateEventHandler) {
-    stateEventHandler = std::make_shared<StateEventHandler>();
+  if (!state_event_handler_) {
+    state_event_handler_ = std::make_shared<StateEventHandler>();
   }
-  stateEventHandler->setTransitionCallback(std::move(callback));
+  state_event_handler_->setTransitionCallback(std::move(callback));
 }
 
 void FiniteStateMachine::setPreEventCallback(StateEventHandler::PreEventCallback callback) {
-  if (!stateEventHandler) {
-    stateEventHandler = std::make_shared<StateEventHandler>();
+  if (!state_event_handler_) {
+    state_event_handler_ = std::make_shared<StateEventHandler>();
   }
-  stateEventHandler->setPreEventCallback(std::move(callback));
+  state_event_handler_->setPreEventCallback(std::move(callback));
 }
 
 void FiniteStateMachine::setEnterStateCallback(StateEventHandler::EnterStateCallback callback) {
-  if (!stateEventHandler) {
-    stateEventHandler = std::make_shared<StateEventHandler>();
+  if (!state_event_handler_) {
+    state_event_handler_ = std::make_shared<StateEventHandler>();
   }
-  stateEventHandler->setEnterStateCallback(std::move(callback));
+  state_event_handler_->setEnterStateCallback(std::move(callback));
 }
 
 void FiniteStateMachine::setExitStateCallback(StateEventHandler::ExitStateCallback callback) {
-  if (!stateEventHandler) {
-    stateEventHandler = std::make_shared<StateEventHandler>();
+  if (!state_event_handler_) {
+    state_event_handler_ = std::make_shared<StateEventHandler>();
   }
-  stateEventHandler->setExitStateCallback(std::move(callback));
+  state_event_handler_->setExitStateCallback(std::move(callback));
 }
 
 void FiniteStateMachine::setPostEventCallback(StateEventHandler::PostEventCallback callback) {
-  if (!stateEventHandler) {
-    stateEventHandler = std::make_shared<StateEventHandler>();
+  if (!state_event_handler_) {
+    state_event_handler_ = std::make_shared<StateEventHandler>();
   }
-  stateEventHandler->setPostEventCallback(std::move(callback));
+  state_event_handler_->setPostEventCallback(std::move(callback));
 }
 
 void FiniteStateMachine::setStateEventHandler(std::shared_ptr<StateEventHandler> handler) {
-  stateEventHandler = handler;
+  state_event_handler_ = handler;
 }
 
 void FiniteStateMachine::addState(const State& name, const State& parent) {
-  if (states.find(name) != states.end()) {
+  if (states_.find(name) != states_.end()) {
     throw std::invalid_argument("State already exists: " + name);
   }
 
-  states[name] = {name, parent, {}};
+  states_[name] = {name, parent, {}};
   if (!parent.empty()) {
-    states[parent].children.push_back(name);
+    states_[parent].children.push_back(name);
   }
 }
 
 void FiniteStateMachine::addTransition(const TransitionRule& rule) {
-  if (states.find(rule.from) == states.end() || states.find(rule.to) == states.end()) {
+  if (states_.find(rule.from) == states_.end() || states_.find(rule.to) == states_.end()) {
     throw std::invalid_argument("State does not exist");
   }
 
@@ -155,29 +155,29 @@ void FiniteStateMachine::addTransition(const TransitionRule& rule) {
   if (rule.event.empty()) {
     TransitionRule ruleWithInternalEvent = rule;
     ruleWithInternalEvent.event = Event(INTERNAL_EVENT);
-    eventTransitions.insert({{rule.from, ruleWithInternalEvent.event}, ruleWithInternalEvent});
+    event_transitions_.insert({{rule.from, ruleWithInternalEvent.event}, ruleWithInternalEvent});
   } else {
-    eventTransitions.insert({{rule.from, rule.event}, rule});
+    event_transitions_.insert({{rule.from, rule.event}, rule});
   }
 }
 
 void FiniteStateMachine::setInitialState(const State& state) {
-  if (states.find(state) == states.end()) {
+  if (states_.find(state) == states_.end()) {
     throw std::invalid_argument("Initial state does not exist");
   }
-  currentState = state;
+  current_state_ = state;
 }
 
 State FiniteStateMachine::getCurrentState() const {
-  std::lock_guard<std::mutex> lock(stateMutex);
-  return currentState;
+  std::lock_guard<std::mutex> lock(state_mutex_);
+  return current_state_;
 }
 
 void FiniteStateMachine::setConditionValue(const std::string& name, int value) {
   std::lock_guard<std::mutex> lock(condition_update_mutex_);
   ConditionUpdateEvent update{name, value, std::chrono::steady_clock::now()};
   condition_update_queue_.push(update);
-  condition_update_cv_.notify_one(); // 通知条件处理线程
+  condition_update_cv_.notify_one();  // 通知条件处理线程
 }
 
 void FiniteStateMachine::loadFromJSON(const std::string& filepath) {
@@ -204,9 +204,9 @@ void FiniteStateMachine::loadFromJSON(const std::string& filepath) {
     for (const auto& eventJson : config["events"]) {
       EventDefinition eventDef;
       eventDef.name = eventJson["name"];
-      eventDef.trigger_mode = eventJson.value("trigger_mode", "edge"); // 默认为边缘触发
-      eventDef.conditionsOperator = eventJson.value("conditions_operator", "AND"); // 默认为AND条件
-      
+      eventDef.trigger_mode = eventJson.value("trigger_mode", "edge");  // 默认为边缘触发
+      eventDef.conditionsOperator = eventJson.value("conditions_operator", "AND");  // 默认为AND条件
+
       // 加载条件
       if (eventJson.contains("conditions")) {
         for (const auto& condition : eventJson["conditions"]) {
@@ -215,11 +215,11 @@ void FiniteStateMachine::loadFromJSON(const std::string& filepath) {
           cond.range = {condition["range"][0], condition["range"][1]};
           cond.duration = condition.value("duration", 0);  // 默认为0
           eventDef.conditions.push_back(cond);
-          allConditions.push_back(cond);
+          all_conditions_.push_back(cond);
         }
       }
       // 添加到事件定义列表
-      eventDefinitions.push_back(eventDef);
+      event_definitions_.push_back(eventDef);
     }
   }
 
@@ -239,33 +239,34 @@ void FiniteStateMachine::loadFromJSON(const std::string& filepath) {
         cond.range = {condition["range"][0], condition["range"][1]};
         cond.duration = condition.value("duration", 0);  // 默认为0
         rule.conditions.push_back(cond);
-        allConditions.push_back(cond);
+        all_conditions_.push_back(cond);
       }
     }
     addTransition(rule);
   }
 
   // 初始化条件的默认值为 0
-  for (const auto& cond : allConditions) {
+  for (const auto& cond : all_conditions_) {
     if (condition_values_.find(cond.name) == condition_values_.end()) {
       condition_values_[cond.name] = {cond.name, 0, std::chrono::steady_clock::now(),
-                                    std::chrono::steady_clock::now(), false};
+                                      std::chrono::steady_clock::now(), false};
     }
   }
 }
 
 void FiniteStateMachine::eventLoop() {
-  while (running) {
+  while (running_) {
     Event event;
     {
-      std::unique_lock<std::mutex> lock(eventMutex);
-      eventCV.wait(lock, [this] { return !running || !eventQueue.empty(); });
-      
-      if (!running) break;
-      
-      if (!eventQueue.empty()) {
-        event = eventQueue.front();
-        eventQueue.pop();
+      std::unique_lock<std::mutex> lock(event_mutex_);
+      event_cv_.wait(lock, [this] { return !running_ || !event_queue_.empty(); });
+
+      if (!running_)
+        break;
+
+      if (!event_queue_.empty()) {
+        event = event_queue_.front();
+        event_queue_.pop();
       } else {
         continue;
       }
@@ -276,18 +277,21 @@ void FiniteStateMachine::eventLoop() {
 }
 
 void FiniteStateMachine::conditionLoop() {
-  while (running) {
+  while (running_) {
     static std::queue<ConditionUpdateEvent> conditionQueueCopy;
     {
       std::unique_lock<std::mutex> lock(condition_update_mutex_);
-      condition_update_cv_.wait(lock, [this] { return !running || !condition_update_queue_.empty(); });
-      if (!running)
+      condition_update_cv_.wait(lock,
+                                [this] { return !running_ || !condition_update_queue_.empty(); });
+      if (!running_)
         break;
       if (!condition_update_queue_.empty()) {
-        // SMF_LOGD("Before condition copy queue size: " + std::to_string(conditionQueueCopy.size()) +
+        // SMF_LOGD("Before condition copy queue size: " + std::to_string(conditionQueueCopy.size())
+        // +
         //          ", condition queue size: " + std::to_string(condition_update_queue_.size()));
         condition_update_queue_.swap(conditionQueueCopy);  // 交换队列
-        // SMF_LOGD("After condition copy queue size: " + std::to_string(conditionQueueCopy.size()) +
+        // SMF_LOGD("After condition copy queue size: " + std::to_string(conditionQueueCopy.size())
+        // +
         //          ", condition queue size: " + std::to_string(condition_update_queue_.size()));
       }
     }
@@ -301,8 +305,9 @@ std::vector<State> FiniteStateMachine::getStateHierarchy(const State& state) con
 
   while (!current.empty()) {
     hierarchy.push_back(current);
-    auto it = states.find(current);
-    if (it == states.end()) break;
+    auto it = states_.find(current);
+    if (it == states_.end())
+      break;
     current = it->second.parent;
   }
 
@@ -312,46 +317,45 @@ std::vector<State> FiniteStateMachine::getStateHierarchy(const State& state) con
 void FiniteStateMachine::processEvent(const Event& event) {
   bool eventHandled = false;
   {
-    State state = currentState;
+    State state = current_state_;
 
     // 事件预处理
-    if (stateEventHandler && !stateEventHandler->onPreEvent(currentState, event)) {
+    if (state_event_handler_ && !state_event_handler_->onPreEvent(current_state_, event)) {
       // 事件被拒绝处理
-      if (stateEventHandler) {
-        stateEventHandler->onPostEvent(event, false);
+      if (state_event_handler_) {
+        state_event_handler_->onPostEvent(event, false);
       }
       return;
     }
 
     while (!state.empty()) {
       auto key = std::make_pair(state, event);
-      
       // 查找当前状态和事件的所有转移规则
-      auto range = eventTransitions.equal_range(key);
+      auto range = event_transitions_.equal_range(key);
       for (auto it = range.first; it != range.second; ++it) {
         const auto& rule = it->second;
         if (checkConditions(rule.conditions, rule.conditionsOperator)) {
           // 获取起始状态和目标状态的完整层次结构
-          std::vector<State> fromStates = getStateHierarchy(currentState);
+          std::vector<State> fromStates = getStateHierarchy(current_state_);
           std::vector<State> toStates = getStateHierarchy(rule.to);
           // 执行状态转换
-          if (stateEventHandler) {
-            stateEventHandler->onTransition(fromStates, event, toStates);
+          if (state_event_handler_) {
+            state_event_handler_->onTransition(fromStates, event, toStates);
           }
           // 调用状态退出处理
-          if (stateEventHandler) {
-            stateEventHandler->onExitState(fromStates);
+          if (state_event_handler_) {
+            state_event_handler_->onExitState(fromStates);
           }
           {
-            std::lock_guard<std::mutex> lock(stateMutex);
-            currentState = rule.to;
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            current_state_ = rule.to;
           }
           // 调用状态进入处理
-          if (stateEventHandler) {
-            stateEventHandler->onEnterState(toStates);
+          if (state_event_handler_) {
+            state_event_handler_->onEnterState(toStates);
           }
 
-          SMF_LOGI("Transition: " + state + " -> " + currentState + " on event " + event.getName());
+          SMF_LOGI("Transition: " + state + " -> " + current_state_ + " on event " + event.getName());
           printSatisfiedConditions(rule.conditions);
 
           eventHandled = true;
@@ -361,12 +365,12 @@ void FiniteStateMachine::processEvent(const Event& event) {
       if (eventHandled) {
         break;  // 找到匹配的转移规则，退出循环
       }
-      state = states[state].parent;
+      state = states_[state].parent;
     }
   }
   // 事件回收处理
-  if (stateEventHandler) {
-    stateEventHandler->onPostEvent(event, eventHandled);
+  if (state_event_handler_) {
+    state_event_handler_->onPostEvent(event, eventHandled);
   }
 }
 
@@ -381,15 +385,16 @@ void FiniteStateMachine::printSatisfiedConditions(const std::vector<Condition>& 
     for (const auto& cond : conditions) {
       int value = condition_values_[cond.name].value;
       if (value >= cond.range.first && value <= cond.range.second) {
-        SMF_LOGD("  - " + cond.name + " = " + std::to_string(value) + " (range: [" + 
-                std::to_string(cond.range.first) + ", " + std::to_string(cond.range.second) + 
-                "],duration: " + std::to_string(cond.duration) + ")");
+        SMF_LOGD("  - " + cond.name + " = " + std::to_string(value) + " (range: [" +
+                 std::to_string(cond.range.first) + ", " + std::to_string(cond.range.second) +
+                 "],duration: " + std::to_string(cond.duration) + ")");
       }
     }
   }
 }
 
-bool FiniteStateMachine::checkConditions(const std::vector<Condition>& conditions, const std::string& op) {
+bool FiniteStateMachine::checkConditions(const std::vector<Condition>& conditions,
+                                         const std::string& op) {
   std::lock_guard<std::mutex> lock(condition_values_mutex_);
   if (conditions.empty()) {
     return true;  // 无条件限制
@@ -419,8 +424,8 @@ bool FiniteStateMachine::checkConditions(const std::vector<Condition>& condition
 
       // 否则需要检查计时器
       auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                           now - condition_values_[cond.name].lastChangedTime)
-                           .count();
+                         now - condition_values_[cond.name].lastChangedTime)
+                         .count();
       valueInRange = (elapsed >= cond.duration);
 
       if (valueInRange) {
@@ -439,39 +444,40 @@ bool FiniteStateMachine::checkConditions(const std::vector<Condition>& condition
   return (op == "AND");  // AND 条件全部满足，或 OR 条件全部不满足
 }
 
-void FiniteStateMachine::processConditionUpdates(std::queue<ConditionUpdateEvent>& conditionUpdateQueue) {
+void FiniteStateMachine::processConditionUpdates(
+    std::queue<ConditionUpdateEvent>& conditionUpdateQueue) {
   std::lock_guard<std::mutex> lock(condition_values_mutex_);
   while (!conditionUpdateQueue.empty()) {
     const auto& update = conditionUpdateQueue.front();
     int oldValue = condition_values_[update.name].value;
     condition_values_[update.name].value = update.value;
-    
+
     // 只有当值改变时才进行后续处理
     if (oldValue != update.value) {
       condition_values_[update.name].lastChangedTime = update.updateTime;
       condition_values_[update.name].isTriggered = false;  // 重置触发状态
-      
+
       bool hasDurationCondition = false;
-      
+
       // 检查此条件值是否配置了持续时间
-      for (const auto& cond : allConditions) {
+      for (const auto& cond : all_conditions_) {
         if (cond.name == update.name) {
-          if (cond.duration > 0 && 
+          if (cond.duration > 0 &&
               (update.value >= cond.range.first && update.value <= cond.range.second)) {
             // 如果条件配置了持续时间且当前值在范围内，添加到定时器
-            std::lock_guard<std::mutex> timerLock(timerMutex);
+            std::lock_guard<std::mutex> timerLock(timer_mutex_);
             auto expiryTime = update.updateTime + std::chrono::milliseconds(cond.duration);
-            timerQueue.push({update.name, update.value, cond.duration, expiryTime});
-            timerCV.notify_one();
+            timer_queue_.push({update.name, update.value, cond.duration, expiryTime});
+            timer_cv_.notify_one();
             hasDurationCondition = true;
-            break; // 一个条件名只添加一个定时器
+            break;  // 一个条件名只添加一个定时器
           }
         }
       }
-      
+
       // 如果没有持续时间条件，需要触发事件生成检查
       if (!hasDurationCondition) {
-        eventTriggerCV.notify_one();
+        event_trigger_cv_.notify_one();
         SMF_LOGD("Condition updated: " + update.name + " to " + std::to_string(update.value));
       }
     }
@@ -481,7 +487,7 @@ void FiniteStateMachine::processConditionUpdates(std::queue<ConditionUpdateEvent
 
 void FiniteStateMachine::triggerEvent() {
   // 检查所有事件定义
-  for (const auto& eventDef : eventDefinitions) {
+  for (const auto& eventDef : event_definitions_) {
     bool conditionsMet = checkConditions(eventDef.conditions, eventDef.conditionsOperator);
     {
       std::lock_guard<std::mutex> lock(condition_values_mutex_);
@@ -494,9 +500,10 @@ void FiniteStateMachine::triggerEvent() {
           condition_values_[eventDef.name].value = 1;
           condition_values_[eventDef.name].lastUpdateTime = std::chrono::steady_clock::now();
           condition_values_[eventDef.name].lastChangedTime = std::chrono::steady_clock::now();
-          
-          SMF_LOGI("Event condition met: " + eventDef.name + ", triggered event and set condition to 1");
-          
+
+          SMF_LOGI("Event condition met: " + eventDef.name +
+                   ", triggered event and set condition to 1");
+
           // 触发事件
           if (eventDef.trigger_mode == "edge") {
             // 创建事件并包含所有相关条件值
@@ -516,9 +523,9 @@ void FiniteStateMachine::triggerEvent() {
           condition_values_[eventDef.name].value = 0;
           condition_values_[eventDef.name].lastUpdateTime = std::chrono::steady_clock::now();
           condition_values_[eventDef.name].lastChangedTime = std::chrono::steady_clock::now();
-          
+
           SMF_LOGI("Event condition no longer met: " + eventDef.name + ", reset condition to 0");
-          
+
           // 如果是边缘触发模式，在条件消失时也触发一次事件
           if (eventDef.trigger_mode == "edge") {
             // 这里可以选择触发特定的事件，例如 eventDef.name + "_RESET"
@@ -534,18 +541,18 @@ void FiniteStateMachine::triggerEvent() {
 }
 
 void FiniteStateMachine::timerLoop() {
-  while (running) {
-    std::unique_lock<std::mutex> lock(timerMutex);
-    if (timerQueue.empty()) {
-      timerCV.wait(lock, [this] { return !running || !timerQueue.empty(); });
+  while (running_) {
+    std::unique_lock<std::mutex> lock(timer_mutex_);
+    if (timer_queue_.empty()) {
+      timer_cv_.wait(lock, [this] { return !running_ || !timer_queue_.empty(); });
       continue;
     }
     auto now = std::chrono::steady_clock::now();
-    if (now >= timerQueue.top().expiryTime) {
-      auto expiredCondition = timerQueue.top();
-      timerQueue.pop();
-      SMF_LOGD("Duration condition expired: " + expiredCondition.name + 
-              " with value " + std::to_string(expiredCondition.value));
+    if (now >= timer_queue_.top().expiryTime) {
+      auto expiredCondition = timer_queue_.top();
+      timer_queue_.pop();
+      SMF_LOGD("Duration condition expired: " + expiredCondition.name + " with value " +
+               std::to_string(expiredCondition.value));
       // 检查当前条件值是否仍然匹配触发时的值并检查检查状态持续时间是否满足
       {
         std::lock_guard<std::mutex> condLock(condition_values_mutex_);
@@ -560,24 +567,25 @@ void FiniteStateMachine::timerLoop() {
           SMF_LOGI("Duration condition triggered: " + expiredCondition.name + " with value " +
                    std::to_string(expiredCondition.value));
           // 触发事件检查
-          std::lock_guard<std::mutex> eventLock(eventTriggerMutex);
-          eventTriggerCV.notify_one();
+          std::lock_guard<std::mutex> eventLock(event_trigger_mutex_);
+          event_trigger_cv_.notify_one();
         }
       }
     } else {
-      timerCV.wait_until(lock, timerQueue.top().expiryTime);
+      timer_cv_.wait_until(lock, timer_queue_.top().expiryTime);
     }
   }
 }
 
 void FiniteStateMachine::eventTriggerLoop() {
-  while (running) {
-    std::unique_lock<std::mutex> lock(eventTriggerMutex);
-    eventTriggerCV.wait(lock);
-    if (!running) break;
+  while (running_) {
+    std::unique_lock<std::mutex> lock(event_trigger_mutex_);
+    event_trigger_cv_.wait(lock);
+    if (!running_)
+      break;
     // 触发事件
     triggerEvent();
   }
 }
 
-} // namespace smf
+}  // namespace smf
