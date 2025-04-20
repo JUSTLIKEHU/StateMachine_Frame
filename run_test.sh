@@ -19,6 +19,7 @@ if [ "$#" -lt 1 ]; then
   echo -e "${YELLOW}用法:${NC}"
   echo -e "  $0 main     ${GREEN}# 运行main_test程序${NC}"
   echo -e "  $0 comp     ${GREEN}# 运行comprehensive_test程序${NC}"
+  echo -e "  $0 hierarchy ${GREEN}# 运行state_hierarchy_test程序${NC}"
   echo -e "  $0 all      ${GREEN}# 运行所有测试程序${NC}"
   exit 1
 fi
@@ -41,6 +42,16 @@ if [ "$1" = "comp" ] || [ "$1" = "all" ]; then
   "./comprehensive_test"
   if [ $? -ne 0 ]; then
     echo -e "${RED}comprehensive_test运行失败${NC}"
+  fi
+fi
+
+if [ "$1" = "hierarchy" ] || [ "$1" = "all" ]; then
+  echo -e "${BLUE}===============================${NC}"
+  echo -e "${BLUE}运行state_hierarchy_test...${NC}"
+  echo -e "${BLUE}===============================${NC}"
+  "./state_hierarchy_test"
+  if [ $? -ne 0 ]; then
+    echo -e "${RED}hierarchy_test运行失败${NC}"
   fi
 fi
 

@@ -32,6 +32,7 @@
  */
 
 #include "state_machine.h"
+#include <algorithm>
 #include <mutex>
 #include "logger.h"
 
@@ -70,10 +71,22 @@ bool FiniteStateMachine::Start() {
 void FiniteStateMachine::Stop() {
   running_ = false;
   // 通知所有等待中的线程
-  event_cv_.notify_one();
-  event_trigger_cv_.notify_one();
-  condition_update_cv_.notify_one();
-  timer_cv_.notify_one();
+  {
+    std::lock_guard<std::mutex> lock(event_mutex_);
+    event_cv_.notify_one();
+  }
+  {
+    std::lock_guard<std::mutex> lock_condition(condition_update_mutex_);
+    condition_update_cv_.notify_one();
+  }
+  {
+    std::lock_guard<std::mutex> lock_timer(timer_mutex_);
+    timer_cv_.notify_one();
+  }
+  {
+    std::lock_guard<std::mutex> lock_event_trigger(event_trigger_mutex_);
+    event_trigger_cv_.notify_one();
+  }
 
   // 等待线程结束
   if (timer_thread_.joinable()) {
@@ -304,7 +317,7 @@ std::vector<State> FiniteStateMachine::GetStateHierarchy(const State& state) con
   State current = state;
 
   while (!current.empty()) {
-    hierarchy.push_back(current);
+    hierarchy.emplace_back(current);
     auto it = states_.find(current);
     if (it == states_.end())
       break;
@@ -312,6 +325,35 @@ std::vector<State> FiniteStateMachine::GetStateHierarchy(const State& state) con
   }
 
   return hierarchy;
+}
+
+void FiniteStateMachine::GetStateHierarchy(const State& from, const State& to,
+                                         std::vector<State>& exit_states,
+                                         std::vector<State>& enter_states) const {
+  // 获取起始状态的层次结构
+  auto fromStates = GetStateHierarchy(from);
+  // 获取目标状态的层次结构
+  auto toStates = GetStateHierarchy(to);
+
+  // 找到共同的父状态
+  auto itFrom = fromStates.rbegin();
+  auto itTo = toStates.rbegin();
+  while (itFrom != fromStates.rend() && itTo != toStates.rend() && *itFrom == *itTo) {
+    ++itFrom;
+    ++itTo;
+  }
+
+  // 添加需要退出的状态
+  for (; itFrom != fromStates.rend(); ++itFrom) {
+    exit_states.emplace_back(*itFrom);
+  }
+
+  std::reverse(exit_states.begin(), exit_states.end());
+  
+  // 添加需要进入的状态
+  for (; itTo != toStates.rend(); ++itTo) {
+    enter_states.emplace_back(*itTo);
+  }
 }
 
 void FiniteStateMachine::ProcessEvent(const Event& event) {
@@ -336,15 +378,16 @@ void FiniteStateMachine::ProcessEvent(const Event& event) {
         const auto& rule = it->second;
         if (CheckConditions(rule.conditions, rule.conditionsOperator)) {
           // 获取起始状态和目标状态的完整层次结构
-          std::vector<State> fromStates = GetStateHierarchy(current_state_);
-          std::vector<State> toStates = GetStateHierarchy(rule.to);
+          std::vector<State> exitStates;
+          std::vector<State> enterStates;
+          GetStateHierarchy(state, rule.to, exitStates, enterStates);
           // 执行状态转换
           if (state_event_handler_) {
-            state_event_handler_->OnTransition(fromStates, event, toStates);
+            state_event_handler_->OnTransition(exitStates, event, enterStates);
           }
           // 调用状态退出处理
           if (state_event_handler_) {
-            state_event_handler_->OnExitState(fromStates);
+            state_event_handler_->OnExitState(exitStates);
           }
           {
             std::lock_guard<std::mutex> lock(state_mutex_);
@@ -352,7 +395,7 @@ void FiniteStateMachine::ProcessEvent(const Event& event) {
           }
           // 调用状态进入处理
           if (state_event_handler_) {
-            state_event_handler_->OnEnterState(toStates);
+            state_event_handler_->OnEnterState(enterStates);
           }
 
           SMF_LOGI("Transition: " + state + " -> " + current_state_ + " on event " + event.GetName());

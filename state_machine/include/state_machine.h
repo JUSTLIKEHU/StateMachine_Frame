@@ -167,15 +167,17 @@ class FiniteStateMachine {
   // 从 JSON 文件加载状态机配置
   void LoadFromJSON(const std::string& filepath);
 
+  // 获取状态及其所有父状态（从子到父的顺序）
+  std::vector<State> GetStateHierarchy(const State& state) const;
+  void GetStateHierarchy(const State& from, const State& to, std::vector<State>& exit_states,
+                         std::vector<State>& enter_states) const;
+
  private:
   // 事件处理循环 - 专注于处理事件队列
   void EventLoop();
 
   // 条件处理循环 - 专注于处理条件更新
   void ConditionLoop();
-
-  // 获取状态及其所有父状态（从子到父的顺序）
-  std::vector<State> GetStateHierarchy(const State& state) const;
 
   // 处理单个事件
   void ProcessEvent(const Event& event);
