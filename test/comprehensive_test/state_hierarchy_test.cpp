@@ -77,9 +77,6 @@ void setupStateMachine(smf::FiniteStateMachine& fsm) {
     // B的子状态
     fsm.AddState("B1", "B");
     fsm.AddState("B2", "B");
-    
-    // 设置初始状态
-    fsm.SetInitialState("ROOT");
 }
 
 // 测试单个状态的层次结构

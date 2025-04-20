@@ -92,6 +92,10 @@ class FiniteStateMachine {
   template <typename T>
   void SetTransitionCallback(T* instance, void (T::*method)(const std::vector<State>&, const Event&,
                                                             const std::vector<State>&)) {
+    if (running_) {
+      SMF_LOGE("Cannot set transition callback while running.");
+      return;
+    }
     if (!state_event_handler_) {
       state_event_handler_ = std::make_shared<StateEventHandler>();
     }
@@ -104,6 +108,10 @@ class FiniteStateMachine {
   // 设置事件预处理回调 - 类成员函数版本
   template <typename T>
   void SetPreEventCallback(T* instance, bool (T::*method)(const State&, const Event&)) {
+    if (running_) {
+      SMF_LOGE("Cannot set pre event callback while running.");
+      return;
+    }
     if (!state_event_handler_) {
       state_event_handler_ = std::make_shared<StateEventHandler>();
     }
@@ -116,6 +124,10 @@ class FiniteStateMachine {
   // 设置状态进入回调 - 类成员函数版本
   template <typename T>
   void SetEnterStateCallback(T* instance, void (T::*method)(const std::vector<State>&)) {
+    if (running_) {
+      SMF_LOGE("Cannot set enter state callback while running.");
+      return;
+    }
     if (!state_event_handler_) {
       state_event_handler_ = std::make_shared<StateEventHandler>();
     }
@@ -128,6 +140,10 @@ class FiniteStateMachine {
   // 设置状态退出回调 - 类成员函数版本
   template <typename T>
   void SetExitStateCallback(T* instance, void (T::*method)(const std::vector<State>&)) {
+    if (initialized_ || running_) {
+      SMF_LOGE("Cannot set exit callback callback while running.");
+      return;
+    }
     if (!state_event_handler_) {
       state_event_handler_ = std::make_shared<StateEventHandler>();
     }
@@ -140,6 +156,10 @@ class FiniteStateMachine {
   // 设置事件回收回调 - 类成员函数版本
   template <typename T>
   void SetPostEventCallback(T* instance, void (T::*method)(const Event&, bool)) {
+    if (initialized_ || running_) {
+      SMF_LOGE("Cannot set post event callback while running.");
+      return;
+    }
     if (!state_event_handler_) {
       state_event_handler_ = std::make_shared<StateEventHandler>();
     }
@@ -164,15 +184,15 @@ class FiniteStateMachine {
   // 修改设置条件值接口为异步处理
   void SetConditionValue(const std::string& name, int value);
 
-  // 从 JSON 文件加载状态机配置
-  void LoadFromJSON(const std::string& filepath);
-
   // 获取状态及其所有父状态（从子到父的顺序）
   std::vector<State> GetStateHierarchy(const State& state) const;
   void GetStateHierarchy(const State& from, const State& to, std::vector<State>& exit_states,
                          std::vector<State>& enter_states) const;
 
  private:
+  // 从 JSON 文件加载状态机配置
+  void LoadFromJSON(const std::string& filepath);
+
   // 事件处理循环 - 专注于处理事件队列
   void EventLoop();
 
@@ -207,8 +227,11 @@ class FiniteStateMachine {
   // 存储所有状态
   std::unordered_map<State, StateInfo> states_;
 
+  // 存储所有条件
+  std::vector<Condition> all_conditions_;
+
   // 存储事件触发的状态转移规则 - 修改为multimap允许同一状态下存在多个同名事件的转移规则
-  std::multimap<std::pair<State, Event>, TransitionRule> event_transitions_;
+  std::multimap<std::pair<State, Event>, TransitionRule> state_transitions_;
 
   // 当前状态
   State current_state_;
@@ -221,8 +244,8 @@ class FiniteStateMachine {
   std::shared_ptr<StateEventHandler> state_event_handler_;
 
   // 新增成员变量
-  std::atomic_bool running_{false};  // 运行状态
-  bool initialized_{false};  // 是否已初始化
+  std::atomic_bool running_{false};
+  std::atomic_bool initialized_{false};
   std::thread event_thread_;
   std::thread event_trigger_thread_;
   std::thread condition_thread_;
@@ -236,8 +259,6 @@ class FiniteStateMachine {
   std::mutex condition_update_mutex_;
   std::condition_variable condition_update_cv_;
   mutable std::mutex state_mutex_;
-  // 添加新的成员变量来存储所有条件
-  std::vector<Condition> all_conditions_;
   std::priority_queue<DurationCondition, std::vector<DurationCondition>,
                       std::function<bool(const DurationCondition&, const DurationCondition&)>>
       timer_queue_{[](const DurationCondition& lhs, const DurationCondition& rhs) {
