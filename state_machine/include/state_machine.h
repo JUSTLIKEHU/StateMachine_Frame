@@ -255,6 +255,7 @@ class FiniteStateMachine {
   std::condition_variable event_cv_;
   std::mutex event_trigger_mutex_;
   std::condition_variable event_trigger_cv_;
+  int condition_update_count_{0};
   std::queue<ConditionUpdateEvent> condition_update_queue_;
   std::mutex condition_update_mutex_;
   std::condition_variable condition_update_cv_;

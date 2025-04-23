@@ -566,6 +566,8 @@ void FiniteStateMachine::ProcessConditionUpdates(
 
       // 如果没有持续时间条件，需要触发事件生成检查
       if (!hasDurationCondition) {
+        std::lock_guard<std::mutex> eventLock(event_trigger_mutex_);
+        condition_update_count_++;
         event_trigger_cv_.notify_one();
         SMF_LOGD("Condition updated: " + update.name + " to " + std::to_string(update.value));
       }
@@ -638,47 +640,85 @@ void FiniteStateMachine::TriggerEvent() {
 
 void FiniteStateMachine::TimerLoop() {
   while (running_) {
-    std::unique_lock<std::mutex> lock(timer_mutex_);
-    if (timer_queue_.empty()) {
-      timer_cv_.wait(lock, [this] { return !running_ || !timer_queue_.empty(); });
-      continue;
+    // 局部变量用于存储过期条件
+    DurationCondition expiredCondition;
+    bool hasExpiredCondition = false;
+    std::chrono::steady_clock::time_point nextWaitTime;
+    {
+      std::unique_lock<std::mutex> lock(timer_mutex_);
+
+      // 如果队列为空，等待通知
+      if (timer_queue_.empty()) {
+        timer_cv_.wait(lock, [this] { return !running_ || !timer_queue_.empty(); });
+        if (!running_)
+          break;
+        if (timer_queue_.empty())
+          continue;
+      }
+
+      auto now = std::chrono::steady_clock::now();
+
+      // 检查队首定时器是否到期
+      if (now >= timer_queue_.top().expiryTime) {
+        // 复制一份数据，然后立即释放锁
+        expiredCondition = timer_queue_.top();
+        timer_queue_.pop();
+        hasExpiredCondition = true;
+      } else {
+        // 如果没有到期，设置等待时间
+        nextWaitTime = timer_queue_.top().expiryTime;
+        // 释放锁并等待到下一个到期时间
+        timer_cv_.wait_until(lock, nextWaitTime);
+        continue;
+      }
     }
-    auto now = std::chrono::steady_clock::now();
-    if (now >= timer_queue_.top().expiryTime) {
-      auto expiredCondition = timer_queue_.top();
-      timer_queue_.pop();
+    // 处理过期的条件
+    if (hasExpiredCondition) {
+      auto now = std::chrono::steady_clock::now();  // 重新获取当前时间
       SMF_LOGD("Duration condition expired: " + expiredCondition.name + " with value " +
                std::to_string(expiredCondition.value));
-      // 检查当前条件值是否仍然匹配触发时的值并检查检查状态持续时间是否满足
+
+      bool shouldTriggerEvent = false;
+
+      // 检查条件是否仍然满足
       {
         std::lock_guard<std::mutex> condLock(condition_values_mutex_);
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                           now - condition_values_[expiredCondition.name].lastChangedTime)
-                           .count();
-        if (condition_values_.find(expiredCondition.name) != condition_values_.end() &&
-            condition_values_[expiredCondition.name].value == expiredCondition.value &&
-            elapsed >= expiredCondition.duration) {
-          // 记录此条件已触发
-          condition_values_[expiredCondition.name].isTriggered = true;
-          SMF_LOGI("Duration condition triggered: " + expiredCondition.name + " with value " +
-                   std::to_string(expiredCondition.value));
-          // 触发事件检查
-          std::lock_guard<std::mutex> eventLock(event_trigger_mutex_);
-          event_trigger_cv_.notify_one();
+        if (condition_values_.find(expiredCondition.name) != condition_values_.end()) {
+          auto& condValue = condition_values_[expiredCondition.name];
+          auto elapsed =
+              std::chrono::duration_cast<std::chrono::milliseconds>(now - condValue.lastChangedTime)
+                  .count();
+
+          if (condValue.value == expiredCondition.value && elapsed >= expiredCondition.duration) {
+            // 记录此条件已触发
+            condValue.isTriggered = true;
+            shouldTriggerEvent = true;
+            SMF_LOGI("Duration condition triggered: " + expiredCondition.name + " with value " +
+                     std::to_string(expiredCondition.value));
+          }
         }
       }
-    } else {
-      timer_cv_.wait_until(lock, timer_queue_.top().expiryTime);
+      // 如果条件满足，触发事件检查
+      if (shouldTriggerEvent) {
+        std::lock_guard<std::mutex> eventLock(event_trigger_mutex_);
+        condition_update_count_++;
+        event_trigger_cv_.notify_one();
+      }
     }
   }
 }
 
 void FiniteStateMachine::EventTriggerLoop() {
   while (running_) {
-    std::unique_lock<std::mutex> lock(event_trigger_mutex_);
-    event_trigger_cv_.wait(lock);
-    if (!running_)
-      break;
+    {
+      std::unique_lock<std::mutex> lock(event_trigger_mutex_);
+      event_trigger_cv_.wait(lock, [this] { return !running_ || condition_update_count_ > 0; });
+      if (condition_update_count_ > 0) {
+        condition_update_count_ = 0;
+      }
+      if (!running_)
+        break;
+    }
     // 触发事件
     TriggerEvent();
   }
