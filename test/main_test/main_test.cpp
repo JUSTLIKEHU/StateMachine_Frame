@@ -1,7 +1,9 @@
 #include <chrono>
 #include <iostream>
+#include <memory>
 #include <thread>
 
+#include "event.h"
 #include "handler_example.h"
 #include "logger.h"  // 添加日志头文件包含
 
@@ -32,8 +34,8 @@ void testMemberFunctionCallbacks() {
   fsm.Start();
 
   // 触发一些事件和条件
-  fsm.HandleEvent("TURN_ON");
-  fsm.HandleEvent("ADJUST_BRIGHTNESS");  // 这应该会被validateEvent方法处理
+  fsm.HandleEvent(std::make_shared<smf::Event>("TURN_ON"));
+  fsm.HandleEvent(std::make_shared<smf::Event>("ADJUST_BRIGHTNESS"));  // 这应该会被validateEvent方法处理
 
   // 停止状态机
   fsm.Stop();
@@ -46,9 +48,9 @@ void testMemberFunctionCallbacks() {
 
 void eventThread(smf::FiniteStateMachine& fsm) {
   for (int i = 0; i < 5; ++i) {
-    fsm.HandleEvent("TURN_ON");
+    fsm.HandleEvent(std::make_shared<smf::Event>("TURN_ON"));
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    fsm.HandleEvent("TURN_OFF");
+    fsm.HandleEvent(std::make_shared<smf::Event>("TURN_OFF"));
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 }
@@ -126,7 +128,7 @@ int main() {
     SMF_LOGI("After setting service_ready=1 and is_connected=1: " + fsm.GetCurrentState());
 
     // Test STAND_BY -> ACTIVE transition
-    fsm.HandleEvent("START");
+    fsm.HandleEvent(std::make_shared<smf::Event>("START"));
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     SMF_LOGI("After START event: " + fsm.GetCurrentState());
 
@@ -141,7 +143,7 @@ int main() {
     SMF_LOGI("After setting is_paused=0: " + fsm.GetCurrentState());
 
     // Test ACTIVE -> STAND_BY transition
-    fsm.HandleEvent("USER_STOP");
+    fsm.HandleEvent(std::make_shared<smf::Event>("USER_STOP"));
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     SMF_LOGI("After USER_STOP event: " + fsm.GetCurrentState());
 

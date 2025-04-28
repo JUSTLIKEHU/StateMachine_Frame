@@ -12,6 +12,7 @@
 #include <sstream>
 #include <thread>
 
+#include "event.h"
 #include "logger.h"  // 添加对日志头文件的包含
 #include "state_machine.h"
 
@@ -31,9 +32,9 @@ class SmartHomeController {
   }
 
   // 状态转移回调 - 添加对状态层次的理解
-  void onTransition(const std::vector<smf::State>& fromStates, const smf::Event& event,
+  void onTransition(const std::vector<smf::State>& fromStates, const smf::EventPtr& event,
                     const std::vector<smf::State>& toStates) {
-    printStateTransition(fromStates, event, toStates);
+    printStateTransition(fromStates, *event, toStates);
 
     // 分析状态转换的实际意义
     bool isLeavingOnline = isReallyLeaving(fromStates, toStates, "ONLINE");
@@ -71,14 +72,14 @@ class SmartHomeController {
   }
 
   // 事件预处理回调
-  bool onPreEvent(const smf::State& currentState, const smf::Event& event) {
-    SMF_LOGI("事件检验: [" + event.toString() + "] 在状态 [" + currentState + "]");
+  bool onPreEvent(const smf::State& currentState, const smf::EventPtr& event) {
+    SMF_LOGI("事件检验: [" + event->toString() + "] 在状态 [" + currentState + "]");
 
     // 检查特定状态下的事件是否合法
-    if (event == "ACTIVATE_SECURITY" && currentState == "OFF") {
+    if (*event == "ACTIVATE_SECURITY" && currentState == "OFF") {
       SMF_LOGW("拒绝处理：系统关闭状态下无法激活安全模式");
       return false;
-    } else if (event == "ENTER_ENERGY_SAVING" && currentState == "SECURITY_MODE") {
+    } else if (*event == "ENTER_ENERGY_SAVING" && currentState == "SECURITY_MODE") {
       SMF_LOGW("拒绝处理：安全模式下不允许进入节能模式");
       return false;
     }
@@ -207,15 +208,15 @@ class SmartHomeController {
   }
 
   // 事件后处理回调
-  void onPostEvent(const smf::Event& event, bool handled) {
+  void onPostEvent(const smf::EventPtr& event, bool handled) {
     std::string status = handled ? "已成功处理" : "未被处理";
-    SMF_LOGI("事件 [" + event.toString() + "] " + status);
+    SMF_LOGI("事件 [" + event->toString() + "] " + status);
 
     // 事件处理后的特定逻辑
-    if (handled && event == "POWER_INCREASE") {
+    if (handled && *event == "POWER_INCREASE") {
       powerLevel = std::min(powerLevel + 10, 100);
       SMF_LOGI("能源水平已增加至: " + std::to_string(powerLevel) + "%");
-    } else if (handled && event == "POWER_DECREASE") {
+    } else if (handled && *event == "POWER_DECREASE") {
       powerLevel = std::max(powerLevel - 10, 0);
       SMF_LOGI("能源水平已降低至: " + std::to_string(powerLevel) + "%");
     }
@@ -514,23 +515,23 @@ void runComprehensiveTest() {
 
   SMF_LOGI("\n=== 测试 3: 事件触发转换 ===");
   SMF_LOGI("发送事件: START_FULL_OPERATION...");
-  fsm.HandleEvent("START_FULL_OPERATION");
+  fsm.HandleEvent(std::make_shared<smf::Event>("START_FULL_OPERATION"));
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
   SMF_LOGI("当前状态: " + fsm.GetCurrentState());
 
   SMF_LOGI("\n=== 测试 4: 特定状态下的事件触发 ===");
   SMF_LOGI("发送事件: ACTIVATE_CLIMATE...");
-  fsm.HandleEvent("ACTIVATE_CLIMATE");
+  fsm.HandleEvent(std::make_shared<smf::Event>("ACTIVATE_CLIMATE"));
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
   SMF_LOGI("当前状态: " + fsm.GetCurrentState());
 
   SMF_LOGI("发送事件: ACTIVATE_LIGHTING (在不同状态层次下)...");
-  fsm.HandleEvent("ACTIVATE_LIGHTING");
+  fsm.HandleEvent(std::make_shared<smf::Event>("ACTIVATE_LIGHTING"));
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
   SMF_LOGI("当前状态: " + fsm.GetCurrentState());
 
   SMF_LOGI("返回上一级状态...");
-  fsm.HandleEvent("DEACTIVATE_LIGHTING");
+  fsm.HandleEvent(std::make_shared<smf::Event>("DEACTIVATE_LIGHTING"));
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
   SMF_LOGI("当前状态: " + fsm.GetCurrentState());
 
@@ -549,7 +550,7 @@ void runComprehensiveTest() {
   SMF_LOGI("当前状态: " + fsm.GetCurrentState());
 
   SMF_LOGI("在OFF状态下发送ACTIVATE_SECURITY事件 (应被拒绝)...");
-  fsm.HandleEvent("ACTIVATE_SECURITY");
+  fsm.HandleEvent(std::make_shared<smf::Event>("ACTIVATE_SECURITY"));
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
   SMF_LOGI("当前状态: " + fsm.GetCurrentState());
 
@@ -566,39 +567,39 @@ void runComprehensiveTest() {
   SMF_LOGI("当前状态: " + fsm.GetCurrentState());
 
   SMF_LOGI("激活安全模式...");
-  fsm.HandleEvent("ACTIVATE_SECURITY");
+  fsm.HandleEvent(std::make_shared<smf::Event>("ACTIVATE_SECURITY"));
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
   SMF_LOGI("当前状态: " + fsm.GetCurrentState());
   SMF_LOGI(controller->getStatusReport());
 
   SMF_LOGI("\n=== 测试 8: 在安全模式下测试无效事件 ===");
   SMF_LOGI("尝试进入节能模式 (应被拒绝)...");
-  fsm.HandleEvent("ENTER_ENERGY_SAVING");
+  fsm.HandleEvent(std::make_shared<smf::Event>("ENTER_ENERGY_SAVING"));
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
   SMF_LOGI("当前状态: " + fsm.GetCurrentState());
 
   SMF_LOGI("\n=== 测试 9: 复杂状态序列 ===");
   SMF_LOGI("退出安全模式...");
-  fsm.HandleEvent("DEACTIVATE_SECURITY");
+  fsm.HandleEvent(std::make_shared<smf::Event>("DEACTIVATE_SECURITY"));
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   SMF_LOGI("进入节能模式...");
-  fsm.HandleEvent("ENTER_ENERGY_SAVING");
+  fsm.HandleEvent(std::make_shared<smf::Event>("ENTER_ENERGY_SAVING"));
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
   SMF_LOGI("当前状态: " + fsm.GetCurrentState());
 
   SMF_LOGI("退出节能模式，进入完全运行状态...");
-  fsm.HandleEvent("EXIT_ENERGY_SAVING");
+  fsm.HandleEvent(std::make_shared<smf::Event>("EXIT_ENERGY_SAVING"));
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  fsm.HandleEvent("START_FULL_OPERATION");
+  fsm.HandleEvent(std::make_shared<smf::Event>("START_FULL_OPERATION"));
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   SMF_LOGI("依次激活温控和照明系统...");
-  fsm.HandleEvent("ACTIVATE_CLIMATE");
+  fsm.HandleEvent(std::make_shared<smf::Event>("ACTIVATE_CLIMATE"));
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  fsm.HandleEvent("DEACTIVATE_CLIMATE");
+  fsm.HandleEvent(std::make_shared<smf::Event>("DEACTIVATE_CLIMATE"));
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  fsm.HandleEvent("ACTIVATE_LIGHTING");
+  fsm.HandleEvent(std::make_shared<smf::Event>("ACTIVATE_LIGHTING"));
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   SMF_LOGI("模拟网络断开...");

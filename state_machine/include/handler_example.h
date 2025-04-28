@@ -1,3 +1,4 @@
+#include "event.h"
 #include "state_machine.h"
 
 namespace smf {
@@ -8,7 +9,7 @@ class LightController {
   LightController() : powerOn(false) {}
 
   // 转换处理
-  void HandleTransition(const std::vector<State>& fromStates, const Event& event,
+  void HandleTransition(const std::vector<State>& fromStates, const EventPtr& event,
                       const std::vector<State>& toStates) {
     (void)event;  // 防止未使用警告
 
@@ -26,10 +27,10 @@ class LightController {
   }
 
   // 事件预处理
-  bool ValidateEvent(const State& state, const Event& event) {
-    SMF_LOGD("Controller: Validating event " + event.toString() + " in state " + state);
+  bool ValidateEvent(const State& state, const EventPtr& event) {
+    SMF_LOGD("Controller: Validating event " + event->toString() + " in state " + state);
     // 例如，仅在灯开启时允许"ADJUST_BRIGHTNESS"事件
-    if (event == "ADJUST_BRIGHTNESS" && state != "ON") {
+    if (*event == "ADJUST_BRIGHTNESS" && state != "ON") {
       SMF_LOGW("Controller: Cannot adjust brightness when light is off!");
       return false;
     }
@@ -55,8 +56,8 @@ class LightController {
   }
 
   // 事件后处理
-  void AfterEvent(const Event& event, bool handled) {
-    SMF_LOGD("Controller: Processed event " + event.toString() +
+  void AfterEvent(const EventPtr& event, bool handled) {
+    SMF_LOGD("Controller: Processed event " + event->toString() +
              (handled ? " successfully" : " but it was not handled"));
   }
 
@@ -88,7 +89,7 @@ inline std::shared_ptr<StateEventHandler> CreateLightStateHandler() {
   auto handler = std::make_shared<StateEventHandler>();
 
   // 设置转换回调
-  handler->SetTransitionCallback([](const std::vector<State>& fromStates, const Event& event,
+  handler->SetTransitionCallback([](const std::vector<State>& fromStates, const EventPtr& event,
                                     const std::vector<State>& toStates) {
     (void)event;  // 防止未使用警告
 
@@ -116,9 +117,9 @@ inline std::shared_ptr<StateEventHandler> CreateLightStateHandler() {
   });
 
   // 设置事件预处理回调
-  handler->SetPreEventCallback([](const State& currentState, const Event& event) {
-    SMF_LOGD("Pre-processing event: " + event.toString() + " in state: " + currentState);
-    if (event == "unsupported_event") {
+  handler->SetPreEventCallback([](const State& currentState, const EventPtr& event) {
+    SMF_LOGD("Pre-processing event: " + event->toString() + " in state: " + currentState);
+    if (*event == "unsupported_event") {
       SMF_LOGW("Rejecting unsupported event!");
       return false;
     }
@@ -150,8 +151,8 @@ inline std::shared_ptr<StateEventHandler> CreateLightStateHandler() {
   });
 
   // 设置事件回收回调
-  handler->SetPostEventCallback([](const Event& event, bool handled) {
-    SMF_LOGD("Post-processing event: " + event.toString() +
+  handler->SetPostEventCallback([](const EventPtr& event, bool handled) {
+    SMF_LOGD("Post-processing event: " + event->toString() +
              (handled ? " (handled)" : " (not handled)"));
   });
 

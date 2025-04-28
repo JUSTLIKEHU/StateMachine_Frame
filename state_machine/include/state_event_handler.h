@@ -38,6 +38,7 @@
 #pragma once
 
 #include <functional>
+
 #include "common_define.h"
 #include "event.h"
 
@@ -46,11 +47,11 @@ class StateEventHandler final {
  public:
   // 各种回调函数类型定义
   using TransitionCallback =
-      std::function<void(const std::vector<State>&, const Event&, const std::vector<State>&)>;
-  using PreEventCallback = std::function<bool(const State&, const Event&)>;
+      std::function<void(const std::vector<State>&, const EventPtr&, const std::vector<State>&)>;
+  using PreEventCallback = std::function<bool(const State&, const EventPtr&)>;
   using EnterStateCallback = std::function<void(const std::vector<State>&)>;
   using ExitStateCallback = std::function<void(const std::vector<State>&)>;
-  using PostEventCallback = std::function<void(const Event&, bool)>;
+  using PostEventCallback = std::function<void(const EventPtr&, bool)>;
 
   // 默认构造函数
   StateEventHandler() = default;
@@ -69,10 +70,11 @@ class StateEventHandler final {
 
   // 支持类成员函数作为状态转换回调
   template <typename T>
-  void SetTransitionCallback(T* instance, void (T::*method)(const std::vector<State>&, const Event&,
-                                                            const std::vector<State>&)) {
+  void SetTransitionCallback(T* instance,
+                             void (T::*method)(const std::vector<State>&, const EventPtr&,
+                                               const std::vector<State>&)) {
     transitionCallback = [instance, method](const std::vector<State>& fromStates,
-                                            const Event& event,
+                                            const EventPtr& event,
                                             const std::vector<State>& toStates) {
       (instance->*method)(fromStates, event, toStates);
     };
@@ -83,8 +85,8 @@ class StateEventHandler final {
 
   // 支持类成员函数作为事件预处理回调
   template <typename T>
-  void SetPreEventCallback(T* instance, bool (T::*method)(const State&, const Event&)) {
-    preEventCallback = [instance, method](const State& currentState, const Event& event) {
+  void SetPreEventCallback(T* instance, bool (T::*method)(const State&, const EventPtr&)) {
+    preEventCallback = [instance, method](const State& currentState, const EventPtr& event) {
       return (instance->*method)(currentState, event);
     };
   }
@@ -118,22 +120,22 @@ class StateEventHandler final {
 
   // 支持类成员函数作为事件回收回调
   template <typename T>
-  void SetPostEventCallback(T* instance, void (T::*method)(const Event&, bool)) {
-    postEventCallback = [instance, method](const Event& event, bool handled) {
+  void SetPostEventCallback(T* instance, void (T::*method)(const EventPtr&, bool)) {
+    postEventCallback = [instance, method](const EventPtr& event, bool handled) {
       (instance->*method)(event, handled);
     };
   }
 
   // 实际处理状态转换
-  void OnTransition(const std::vector<State>& fromStates, const Event& event,
-                   const std::vector<State>& toStates) {
+  void OnTransition(const std::vector<State>& fromStates, const EventPtr& event,
+                    const std::vector<State>& toStates) {
     if (transitionCallback) {
       transitionCallback(fromStates, event, toStates);
     }
   }
 
   // 实际处理事件预处理
-  bool OnPreEvent(const State& currentState, const Event& event) {
+  bool OnPreEvent(const State& currentState, const EventPtr& event) {
     if (preEventCallback) {
       return preEventCallback(currentState, event);
     }
@@ -155,7 +157,7 @@ class StateEventHandler final {
   }
 
   // 实际处理事件回收
-  void OnPostEvent(const Event& event, bool handled) {
+  void OnPostEvent(const EventPtr& event, bool handled) {
     if (postEventCallback) {
       postEventCallback(event, handled);
     }

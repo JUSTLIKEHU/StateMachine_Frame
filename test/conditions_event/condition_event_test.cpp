@@ -11,20 +11,21 @@
 #include <string>
 #include <thread>
 
+#include "event.h"
 #include "logger.h"
 #include "state_machine.h"
 
 using namespace smf;
 
 // 状态变化回调
-void OnStateChanged(const std::vector<State>& fromStates, const Event& event,
+void OnStateChanged(const std::vector<State>& fromStates, const EventPtr& event,
                     const std::vector<State>& toStates) {
   State from = fromStates.empty() ? "" : fromStates[0];
   State to = toStates.empty() ? "" : toStates[0];
 
   std::string logMsg = "[状态变化]: " + from + " -> " + to;
-  if (!event.empty()) {
-    logMsg += " (由事件 " + event.GetName() + " 触发)";
+  if (event) {
+    logMsg += " (由事件 " + event->GetName() + " 触发)";
   }
   SMF_LOGI(logMsg);
 }

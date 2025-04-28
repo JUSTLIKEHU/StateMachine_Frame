@@ -42,6 +42,7 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -157,5 +158,8 @@ inline std::ostream& operator<<(std::ostream& os, const Event& event) {
 
   return os;
 }
+
+using EventPtr = std::shared_ptr<Event>;  // 定义事件指针类型
+using EventWeakPtr = std::weak_ptr<Event>;
 
 }  // namespace smf

@@ -45,6 +45,15 @@
 
 namespace smf {
 
+// 添加ANSI颜色码常量
+namespace Color {
+  const std::string RESET   = "\033[0m";
+  const std::string WHITE   = "\033[37m";
+  const std::string GREEN   = "\033[32m";
+  const std::string YELLOW  = "\033[33m";
+  const std::string RED     = "\033[31m";
+}
+
 enum class LogLevel { DEBUG, INFO, WARN, ERROR };
 
 class Logger {
@@ -83,7 +92,7 @@ class Logger {
               << millis << "] "  // 添加毫秒显示
               << LevelToString(level) << " "
               << "[" << fileName << ":" << line << " - " << std::this_thread::get_id() << "] "
-              << message << std::endl;
+              << message << Color::RESET << std::endl;
   }
 
  private:
@@ -94,13 +103,13 @@ class Logger {
   std::string LevelToString(LogLevel level) const {
     switch (level) {
       case LogLevel::DEBUG:
-        return "[DEBUG]";
+        return Color::WHITE + "[DEBUG]";
       case LogLevel::INFO:
-        return "[INFO] ";
+        return Color::GREEN + "[INFO] ";
       case LogLevel::WARN:
-        return "[WARN] ";
+        return Color::YELLOW + "[WARN] ";
       case LogLevel::ERROR:
-        return "[ERROR]";
+        return Color::RED + "[ERROR]";
       default:
         return "[UNKNOWN]";
     }

@@ -53,6 +53,7 @@
 #include <vector>
 
 #include "common_define.h"
+#include "event.h"
 #include "logger.h"                // 添加日志头文件
 #include "nlohmann-json/json.hpp"  // 引入 nlohmann/json 库
 #include "state_event_handler.h"   // 引入状态事件处理器头文件
@@ -83,14 +84,14 @@ class FiniteStateMachine {
   void Stop();
 
   // 处理事件（线程安全）
-  void HandleEvent(const Event& event);
+  void HandleEvent(const EventPtr& event);
 
   // 设置状态转移回调 - 函数对象版本
   void SetTransitionCallback(StateEventHandler::TransitionCallback callback);
 
   // 设置状态转移回调 - 类成员函数版本
   template <typename T>
-  void SetTransitionCallback(T* instance, void (T::*method)(const std::vector<State>&, const Event&,
+  void SetTransitionCallback(T* instance, void (T::*method)(const std::vector<State>&, const EventPtr&,
                                                             const std::vector<State>&)) {
     if (running_) {
       SMF_LOGE("Cannot set transition callback while running.");
@@ -107,7 +108,7 @@ class FiniteStateMachine {
 
   // 设置事件预处理回调 - 类成员函数版本
   template <typename T>
-  void SetPreEventCallback(T* instance, bool (T::*method)(const State&, const Event&)) {
+  void SetPreEventCallback(T* instance, bool (T::*method)(const State&, const EventPtr&)) {
     if (running_) {
       SMF_LOGE("Cannot set pre event callback while running.");
       return;
@@ -155,7 +156,7 @@ class FiniteStateMachine {
 
   // 设置事件回收回调 - 类成员函数版本
   template <typename T>
-  void SetPostEventCallback(T* instance, void (T::*method)(const Event&, bool)) {
+  void SetPostEventCallback(T* instance, void (T::*method)(const EventPtr&, bool)) {
     if (initialized_ || running_) {
       SMF_LOGE("Cannot set post event callback while running.");
       return;
@@ -200,7 +201,7 @@ class FiniteStateMachine {
   void ConditionLoop();
 
   // 处理单个事件
-  void ProcessEvent(const Event& event);
+  void ProcessEvent(const EventPtr& event);
 
   // 检查条件触发规则 - 这个方法不再使用
   // 保留代码但标记为废弃，供参考
@@ -251,7 +252,7 @@ class FiniteStateMachine {
   std::thread event_trigger_thread_;
   std::thread condition_thread_;
   std::thread timer_thread_;
-  std::queue<Event> event_queue_;
+  std::queue<EventPtr> event_queue_;
   std::mutex event_mutex_;
   std::condition_variable event_cv_;
   std::mutex event_trigger_mutex_;

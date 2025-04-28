@@ -38,6 +38,7 @@
 #include <vector>
 
 #include "common_define.h"
+#include "event.h"
 #include "logger.h"
 
 namespace smf {
@@ -107,7 +108,7 @@ void FiniteStateMachine::Stop() {
   }
 }
 
-void FiniteStateMachine::HandleEvent(const Event& event) {
+void FiniteStateMachine::HandleEvent(const EventPtr& event) {
   std::lock_guard<std::mutex> lock(event_mutex_);
   event_queue_.push(event);
   event_cv_.notify_one();
@@ -305,7 +306,7 @@ void FiniteStateMachine::LoadFromJSON(const std::string& filepath) {
 
 void FiniteStateMachine::EventLoop() {
   while (running_) {
-    Event event;
+    EventPtr event{nullptr};
     {
       std::unique_lock<std::mutex> lock(event_mutex_);
       event_cv_.wait(lock, [this] { return !running_ || !event_queue_.empty(); });
@@ -390,7 +391,7 @@ void FiniteStateMachine::GetStateHierarchy(const State& from, const State& to,
   }
 }
 
-void FiniteStateMachine::ProcessEvent(const Event& event) {
+void FiniteStateMachine::ProcessEvent(const EventPtr& event) {
   bool eventHandled = false;
   {
     State state = current_state_;
@@ -405,7 +406,7 @@ void FiniteStateMachine::ProcessEvent(const Event& event) {
     }
 
     while (!state.empty()) {
-      auto key = std::make_pair(state, event);
+      auto key = std::make_pair(state, *event);
       // 查找当前状态和事件的所有转移规则
       auto range = state_transitions_.equal_range(key);
       for (auto it = range.first; it != range.second; ++it) {
@@ -434,7 +435,7 @@ void FiniteStateMachine::ProcessEvent(const Event& event) {
           }
 
           SMF_LOGI("Transition: " + state + " -> " + current_state_ + " on event " +
-                   event.toString());
+                   event->toString());
           PrintSatisfiedConditions(rule.conditions);
 
           eventHandled = true;
@@ -601,9 +602,9 @@ void FiniteStateMachine::TriggerEvent() {
           // 触发事件
           if (eventDef.trigger_mode == "edge") {
             // 创建事件并包含所有相关条件值
-            Event newEvent(eventDef.name);
-            newEvent.SetMatchedConditions(condition_infos);
-            HandleEvent(newEvent);
+            EventPtr eventPtr = std::make_shared<Event>(eventDef.name);
+            eventPtr->SetMatchedConditions(condition_infos);
+            HandleEvent(eventPtr);
           }
         }
       } else {
@@ -621,15 +622,17 @@ void FiniteStateMachine::TriggerEvent() {
           // 如果是边缘触发模式，在条件消失时也触发一次事件
           if (eventDef.trigger_mode == "edge") {
             // 这里可以选择触发特定的事件，例如 eventDef.name + "_RESET"
-            // 或者直接触发内部事件进行状态检查
-            HandleEvent(Event(INTERNAL_EVENT));
+            // 触发不带满足条件的同名事件
+            EventPtr eventPtr = std::make_shared<Event>(eventDef.name);
+            HandleEvent(eventPtr);
           }
         }
       }
     }
   }
   // 所有条件更新都支持触发内部事件
-  HandleEvent(Event(INTERNAL_EVENT));
+  EventPtr eventPtr = std::make_shared<Event>(INTERNAL_EVENT);
+  HandleEvent(eventPtr);
 }
 
 void FiniteStateMachine::TimerLoop() {
