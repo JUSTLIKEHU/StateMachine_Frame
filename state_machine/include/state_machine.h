@@ -210,7 +210,8 @@ class FiniteStateMachine {
   void PrintSatisfiedConditions(const std::vector<Condition>& conditions);
 
   // 检查条件是否满足
-  bool CheckConditions(const std::vector<Condition>& conditions, const std::string& op);
+  bool CheckConditions(const std::vector<Condition>& conditions, const std::string& op,
+                       std::vector<ConditionInfo>& condition_infos);
 
   // 处理条件更新队列
   void ProcessConditionUpdates(std::queue<ConditionUpdateEvent>& conditionUpdateQueue);

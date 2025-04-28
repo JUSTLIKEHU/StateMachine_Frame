@@ -35,7 +35,9 @@
 
 #include <algorithm>
 #include <mutex>
+#include <vector>
 
+#include "common_define.h"
 #include "logger.h"
 
 namespace smf {
@@ -296,7 +298,7 @@ void FiniteStateMachine::LoadFromJSON(const std::string& filepath) {
   for (const auto& cond : all_conditions_) {
     if (condition_values_.find(cond.name) == condition_values_.end()) {
       condition_values_[cond.name] = {cond.name, 0, std::chrono::steady_clock::now(),
-                                      std::chrono::steady_clock::now(), false};
+                                      std::chrono::steady_clock::now()};
     }
   }
 }
@@ -408,7 +410,8 @@ void FiniteStateMachine::ProcessEvent(const Event& event) {
       auto range = state_transitions_.equal_range(key);
       for (auto it = range.first; it != range.second; ++it) {
         const auto& rule = it->second;
-        if (CheckConditions(rule.conditions, rule.conditionsOperator)) {
+        std::vector<ConditionInfo> condition_infos;
+        if (CheckConditions(rule.conditions, rule.conditionsOperator, condition_infos)) {
           // 获取起始状态和目标状态的完整层次结构
           std::vector<State> exitStates;
           std::vector<State> enterStates;
@@ -431,7 +434,7 @@ void FiniteStateMachine::ProcessEvent(const Event& event) {
           }
 
           SMF_LOGI("Transition: " + state + " -> " + current_state_ + " on event " +
-                   event.GetName());
+                   event.toString());
           PrintSatisfiedConditions(rule.conditions);
 
           eventHandled = true;
@@ -477,7 +480,8 @@ void FiniteStateMachine::PrintSatisfiedConditions(const std::vector<Condition>& 
 }
 
 bool FiniteStateMachine::CheckConditions(const std::vector<Condition>& conditions,
-                                         const std::string& op) {
+                                         const std::string& op,
+                                         std::vector<ConditionInfo>& condition_infos) {
   std::unordered_map<std::string, ConditionValue> condition_values_copy;
   {
     std::lock_guard<std::mutex> lock(condition_values_mutex_);
@@ -486,6 +490,11 @@ bool FiniteStateMachine::CheckConditions(const std::vector<Condition>& condition
   if (conditions.empty()) {
     return true;  // 无条件限制
   }
+  if (op != "AND" && op != "OR") {
+    throw std::invalid_argument("Invalid operator: " + op);
+  }
+
+  condition_infos.clear();
 
   auto now = std::chrono::steady_clock::now();
 
@@ -500,30 +509,18 @@ bool FiniteStateMachine::CheckConditions(const std::vector<Condition>& condition
     // 检查持续时间
     if (cond.duration > 0 && valueInRange) {
       // 如果条件配置了持续时间，检查当前时间是否超过持续时间
-      // 检查是否在已触发的持续条件中
-      if (condition_values_copy[cond.name].isTriggered) {
-        // 此持续条件已经满足并触发过，无需再次等待
-        if (op == "OR") {
-          return true;  // OR 条件满足
-        }
-        continue;  // 继续检查下一个条件
-      }
-
-      // 否则需要检查计时器
       auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                          now - condition_values_copy[cond.name].lastChangedTime)
                          .count();
       valueInRange = (elapsed >= cond.duration);
-
       if (valueInRange) {
-        // 如果时间条件满足，记录此条件已触发
-        std::lock_guard<std::mutex> lock(condition_values_mutex_);
-        condition_values_[cond.name].isTriggered = true;
+        condition_infos.emplace_back(ConditionInfo{cond.name, value, elapsed});
       }
     }
 
     if (op == "AND" && !valueInRange) {
-      return false;  // AND 条件不满足
+      condition_infos.clear();  // 清空条件信息
+      return false;             // AND 条件不满足
     } else if (op == "OR" && valueInRange) {
       return true;  // OR 条件满足
     }
@@ -544,7 +541,6 @@ void FiniteStateMachine::ProcessConditionUpdates(
     // 只有当值改变时才进行后续处理
     if (oldValue != update.value) {
       condition_values_[update.name].lastChangedTime = update.updateTime;
-      condition_values_[update.name].isTriggered = false;  // 重置触发状态
 
       bool hasDurationCondition = false;
 
@@ -584,7 +580,9 @@ void FiniteStateMachine::TriggerEvent() {
     condition_values_copy = condition_values_;
   }
   for (const auto& eventDef : event_definitions_) {
-    bool conditionsMet = CheckConditions(eventDef.conditions, eventDef.conditionsOperator);
+    std::vector<ConditionInfo> condition_infos;
+    bool conditionsMet =
+        CheckConditions(eventDef.conditions, eventDef.conditionsOperator, condition_infos);
     {
       int currentEventConditionValue = condition_values_copy[eventDef.name].value;
       // 检查事件条件是否满足
@@ -604,11 +602,7 @@ void FiniteStateMachine::TriggerEvent() {
           if (eventDef.trigger_mode == "edge") {
             // 创建事件并包含所有相关条件值
             Event newEvent(eventDef.name);
-            for (const auto& cond : eventDef.conditions) {
-              // 使用统一的SetCondition接口，同时处理条件值和持续时间
-              newEvent.SetCondition(cond.name, condition_values_copy[cond.name].value,
-                                    cond.duration > 0 ? cond.duration : 0);
-            }
+            newEvent.SetMatchedConditions(condition_infos);
             HandleEvent(newEvent);
           }
         }
@@ -690,8 +684,6 @@ void FiniteStateMachine::TimerLoop() {
                   .count();
 
           if (condValue.value == expiredCondition.value && elapsed >= expiredCondition.duration) {
-            // 记录此条件已触发
-            condValue.isTriggered = true;
             shouldTriggerEvent = true;
             SMF_LOGI("Duration condition triggered: " + expiredCondition.name + " with value " +
                      std::to_string(expiredCondition.value));

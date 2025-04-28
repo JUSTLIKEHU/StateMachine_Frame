@@ -60,7 +60,13 @@ struct ConditionValue {
   int value;                                              // 条件值
   std::chrono::steady_clock::time_point lastUpdateTime;   // 最后一次更新时间
   std::chrono::steady_clock::time_point lastChangedTime;  // 上次变化时间
-  bool isTriggered;                                       // 是否已触发
+};
+
+// 条件信息
+struct ConditionInfo {
+  std::string name;  // 条件名称
+  int value;         // 条件值
+  long duration;      // 持续时间，单位为毫秒
 };
 
 // 状态转移规则

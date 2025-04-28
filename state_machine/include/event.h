@@ -44,16 +44,12 @@
 #include <map>
 #include <ostream>
 #include <string>
+#include <vector>
 
+#include "common_define.h"
 #include "logger.h"
 
 namespace smf {
-
-// 保存持续条件的结构：值和持续时间(毫秒)
-struct DurationInfo {
-  int value;
-  int durationMs;
-};
 
 class Event {
  public:
@@ -65,26 +61,30 @@ class Event {
   Event(const char* name) : name_(name) {}
 
   // 构造函数，包含事件名称和条件值
-  Event(const std::string& name, const std::map<std::string, DurationInfo>& conditionValues)
-      : name_(name), durationConditions_(conditionValues) {}
+  Event(const std::string& name, const std::vector<ConditionInfo>& conditionValues)
+      : name_(name), matched_conditions_(conditionValues) {}
 
   // 获取事件名称
   const std::string& GetName() const { return name_; }
 
   // 获取条件值
-  int GetConditionValue(const std::string& conditionName) const {
-    auto it = durationConditions_.find(conditionName);
-    return it != durationConditions_.end() ? it->second.value : 0;
-  }
+  const std::vector<ConditionInfo>& GetMatchedConditions() const { return matched_conditions_; }
 
-  void SetCondition(const std::string& conditionName, int value, int durationMs = 0) {
-    if (conditionName.empty() || value < 0) {
+  void SetMatchedCondition(ConditionInfo& condition) {
+    if (condition.name.empty() || condition.value < 0) {
       SMF_LOGE("conditionName is empty or value is less than 0");
+      return;
     }
-    durationConditions_[conditionName] = {value, durationMs};
+    matched_conditions_.emplace_back(std::move(condition));
   }
 
-  void Clear() { durationConditions_.clear(); }
+  void SetMatchedConditions(std::vector<ConditionInfo>& conditions) {
+    for (auto& condition : conditions) {
+      SetMatchedCondition(condition);
+    }
+  }
+
+  void Clear() { matched_conditions_.clear(); }
 
   // 将事件转换为字符串（隐式转换）
   operator std::string() const { return name_; }
@@ -110,15 +110,15 @@ class Event {
   std::string toString() const {
     std::string result = name_;
 
-    if (!durationConditions_.empty()) {
+    if (!matched_conditions_.empty()) {
       result += " [";
       bool first = true;
-      for (const auto& pair : durationConditions_) {
+      for (const auto& condition : matched_conditions_) {
         if (!first)
           result += ", ";
-        result += pair.first + "=" + std::to_string(pair.second.value);
-        if (pair.second.durationMs > 0) {
-          result += " (sustain " + std::to_string(pair.second.durationMs) + " ms)";
+        result += condition.name + "=" + std::to_string(condition.value);
+        if (condition.duration > 0) {
+          result += " (sustain " + std::to_string(condition.duration) + " ms)";
         }
         first = false;
       }
@@ -129,8 +129,8 @@ class Event {
   }
 
  private:
-  std::string name_;                                        // 事件名称
-  std::map<std::string, DurationInfo> durationConditions_;  // 保存条件的值
+  std::string name_;                                         // 事件名称
+  std::vector<ConditionInfo> matched_conditions_;            // 保存触发事件的条件的值
 
   // 友元，用于实现流输出运算符
   friend std::ostream& operator<<(std::ostream& os, const Event& event);
@@ -139,15 +139,15 @@ class Event {
 // 重载流输出运算符
 inline std::ostream& operator<<(std::ostream& os, const Event& event) {
   os << event.name_;
-  if (!event.durationConditions_.empty()) {
+  if (!event.matched_conditions_.empty()) {
     os << " [";
     bool first = true;
-    for (const auto& pair : event.durationConditions_) {
+    for (const auto& condition : event.matched_conditions_) {
       if (!first)
         os << ", ";
-      os << pair.first << "=" << pair.second.value;
-      if (pair.second.durationMs > 0) {
-        os << " (sustain " << pair.second.durationMs << " ms)";  // 添加持续时间的输出
+      os << condition.name << "=" << std::to_string(condition.value);
+      if (condition.duration > 0) {
+        os << " (sustain " << std::to_string(condition.duration) << " ms)";  // 添加持续时间的输出
       }
       first = false;
     }
