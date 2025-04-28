@@ -37,12 +37,22 @@ StateMachine_Frame/
 ├── README_CN.md              # Chinese documentation
 ├── run_test.sh               # Script to run tests
 ├── state_machine/            # Core library implementation
-│   ├── logger.h              # Logger implementation
-│   └── state_machine.h       # Main FSM implementation
+│   ├── include/              # Header files
+│   │   ├── common_define.h   # Common definitions
+│   │   ├── event.h           # Event handling
+│   │   ├── logger.h          # Logger implementation
+│   │   ├── state_event_handler.h  # State event handler
+│   │   └── state_machine.h   # Main FSM implementation
+│   └── src/                  # Source files
+│       └── state_machine.cpp # Implementation file
 ├── test/                     # Test files
 │   ├── CMakeLists.txt        # Test build configuration
 │   ├── comprehensive_test/   # Comprehensive tests
-│   │   └── comprehensive_test.cpp  # Smart home system test example
+│   │   ├── comprehensive_test.cpp  # Smart home system test
+│   │   └── state_hierarchy_test.cpp # Hierarchy state test
+│   ├── conditions_event/     # Condition-based events tests
+│   │   ├── condition_event_test.cpp  # Condition event test
+│   │   └── config/           # Test configurations
 │   └── main_test/            # Basic tests
 │       └── main_test.cpp     # Basic functionality test
 └── third_party/              # External dependencies
@@ -57,7 +67,8 @@ StateMachine_Frame/
 
 1. **State and Event Types**
   - `State`: Represented as a `std::string`.
-  - `Event`: Represented as a `std::string`.
+  - `Event`: Class representing an event with name and matched conditions information.
+  - `EventPtr`: Defined as `std::shared_ptr<Event>` for safer event handling.
 
 2. **Condition Type**
   ```cpp
@@ -71,36 +82,44 @@ StateMachine_Frame/
 3. **Condition Value**
   ```cpp
   struct ConditionValue {
-    std::string name;                                 // Condition name
-    int value;                                        // Current condition value
-    std::chrono::steady_clock::time_point lastUpdateTime;  // Last update timestamp
-    std::chrono::steady_clock::time_point lastChangedTime; // Timestamp when the value last changed
-    bool isTriggered;                                 // Whether it has been triggered (for duration conditions)
+    std::string name;                                       // Condition name
+    int value;                                              // Current condition value
+    std::chrono::steady_clock::time_point lastUpdateTime;   // Last update timestamp
+    std::chrono::steady_clock::time_point lastChangedTime;  // Timestamp when the value last changed
   };
   ```
 
-4. **Event Definition Structure**
+4. **Condition Info**
+  ```cpp
+  struct ConditionInfo {
+    std::string name;  // Condition name
+    int value;         // Condition value
+    long duration;     // Duration in milliseconds that the condition has been satisfied
+  };
+  ```
+
+5. **Event Definition Structure**
   ```cpp
   struct EventDefinition {
-    std::string name;               // Event name
-    std::string trigger_mode;       // Trigger mode: edge (edge-triggered) or level (level-triggered)
+    std::string name;                   // Event name
+    std::string trigger_mode;           // Trigger mode: edge (edge-triggered) or level (level-triggered)
     std::vector<Condition> conditions;  // Conditions that trigger the event
-    std::string conditionsOperator; // Condition operator ("AND" or "OR")
+    std::string conditionsOperator;     // Condition operator ("AND" or "OR")
   };
   ```
 
-5. **Transition Rule**
+6. **Transition Rule**
   ```cpp
   struct TransitionRule {
     State from;                         // Source state
-    Event event;                        // Triggering event (can be empty)
+    std::string event;                  // Triggering event (can be empty)
     State to;                           // Target state
     std::vector<Condition> conditions;  // List of conditions
     std::string conditionsOperator;     // Condition operator ("AND" or "OR")
   };
   ```
 
-6. **State Info**
+7. **State Info**
   ```cpp
   struct StateInfo {
     State name;                   // State name
@@ -109,7 +128,7 @@ StateMachine_Frame/
   };
   ```
 
-7. **Condition Update Event**
+8. **Condition Update Event**
   ```cpp
   struct ConditionUpdateEvent {
     std::string name;
@@ -118,56 +137,57 @@ StateMachine_Frame/
   };
   ```
 
-8. **Duration Condition**
+9. **Duration Condition**
   ```cpp
   struct DurationCondition {
     std::string name;
-    int value;  // Value at the time of triggering
+    int value;        // Value at the time of triggering
+    int duration;     // Duration in milliseconds
     std::chrono::steady_clock::time_point expiryTime;
   };
   ```
 
-9. **State Event Handler**
+10. **State Event Handler**
   ```cpp
   class StateEventHandler {
   public:
     // Callback function types
-    using TransitionCallback = std::function<void(const std::vector<State>&, const Event&, const std::vector<State>&)>;
-    using PreEventCallback = std::function<bool(const State&, const Event&)>;
+    using TransitionCallback = std::function<void(const std::vector<State>&, const EventPtr&, const std::vector<State>&)>;
+    using PreEventCallback = std::function<bool(const State&, const EventPtr&)>;
     using EnterStateCallback = std::function<void(const std::vector<State>&)>;
     using ExitStateCallback = std::function<void(const std::vector<State>&)>;
-    using PostEventCallback = std::function<void(const Event&, bool)>;
+    using PostEventCallback = std::function<void(const EventPtr&, bool)>;
     
     // Set callback functions
-    void setTransitionCallback(TransitionCallback callback);
-    void setPreEventCallback(PreEventCallback callback);
-    void setEnterStateCallback(EnterStateCallback callback);
-    void setExitStateCallback(ExitStateCallback callback);
-    void setPostEventCallback(PostEventCallback callback);
+    void SetTransitionCallback(TransitionCallback callback);
+    void SetPreEventCallback(PreEventCallback callback);
+    void SetEnterStateCallback(EnterStateCallback callback);
+    void SetExitStateCallback(ExitStateCallback callback);
+    void SetPostEventCallback(PostEventCallback callback);
     
     // Support for class member functions as callbacks
     template<typename T>
-    void setTransitionCallback(T* instance, void (T::*method)(const std::vector<State>&, const Event&, const std::vector<State>&));
+    void SetTransitionCallback(T* instance, void (T::*method)(const std::vector<State>&, const EventPtr&, const std::vector<State>&));
     
     template<typename T>
-    void setPreEventCallback(T* instance, bool (T::*method)(const State&, const Event&));
+    void SetPreEventCallback(T* instance, bool (T::*method)(const State&, const EventPtr&));
     
     template<typename T>
-    void setEnterStateCallback(T* instance, void (T::*method)(const std::vector<State>&));
+    void SetEnterStateCallback(T* instance, void (T::*method)(const std::vector<State>&));
     
     template<typename T>
-    void setExitStateCallback(T* instance, void (T::*method)(const std::vector<State>&));
+    void SetExitStateCallback(T* instance, void (T::*method)(const std::vector<State>&));
     
     template<typename T>
-    void setPostEventCallback(T* instance, void (T::*method)(const Event&, bool));
+    void SetPostEventCallback(T* instance, void (T::*method)(const EventPtr&, bool));
     
     // Internal call methods
-    void onTransition(const std::vector<State>& fromStates, const Event& event, 
+    void OnTransition(const std::vector<State>& fromStates, const EventPtr& event, 
                      const std::vector<State>& toStates);
-    bool onPreEvent(const State& currentState, const Event& event);
-    void onEnterState(const std::vector<State>& states);
-    void onExitState(const std::vector<State>& states);
-    void onPostEvent(const Event& event, bool handled);
+    bool OnPreEvent(const State& currentState, const EventPtr& event);
+    void OnEnterState(const std::vector<State>& states);
+    void OnExitState(const std::vector<State>& states);
+    void OnPostEvent(const EventPtr& event, bool handled);
   };
   ```
   - Provides flexible callback-based state transition handling:
@@ -178,22 +198,26 @@ StateMachine_Frame/
   - Receives complete state hierarchies rather than single states
   - Enables handling transitions with knowledge of the entire state context
 
-10. **Finite State Machine Class**
+11. **Finite State Machine Class**
   - Core class for managing the state machine:
-    - Initialization: Load configuration from a JSON file.
-    - Event Handling: Process events asynchronously.
-    - Condition Handling: Update and check conditions.
-    - State Transitions: Trigger transitions based on events or conditions.
-    - Event Generation: Automatically generate events based on condition changes.
+    - Initialization: Load configuration from a JSON file
+    - Event Handling: Process events asynchronously
+    - Condition Handling: Update and check conditions
+    - State Transitions: Trigger transitions based on events or conditions
+    - Event Generation: Automatically generate events based on condition changes
+    - Timer Management: Handle time-based (duration) conditions
 
-11. **Logger Class**
+12. **Logger Class**
   ```cpp
   class Logger {
   public:
-    static Logger& getInstance();
-    void setLogLevel(LogLevel level);
-    LogLevel getLogLevel() const;
-    void log(LogLevel level, const std::string& file, int line, const std::string& message);
+    static Logger& GetInstance();
+    void SetLogLevel(LogLevel level);
+    LogLevel GetLogLevel() const;
+    void Log(LogLevel level, const std::string& file, int line, const std::string& message);
+    void SetLogFile(const std::string& file);
+    void SetLogFileRolling(size_t max_file_size, int max_backup_index);
+    void Shutdown();
   private:
     Logger();
     // Thread-safe implementation with mutex
@@ -202,6 +226,7 @@ StateMachine_Frame/
   - Thread-safe singleton logger with support for multiple log levels
   - Includes file, line number, and timestamp information
   - Provides convenient macros for different log levels
+  - Supports file-based logging with rotation capabilities
 
 ---
 
@@ -482,6 +507,9 @@ A more complex example that simulates a smart home system with multiple states, 
 - `void setLogLevel(LogLevel level)`: Set the minimum log level to display
 - `LogLevel getLogLevel() const`: Get the current minimum log level
 - `void log(LogLevel level, const std::string& file, int line, const std::string& message)`: Log a message
+- `void setLogFile(const std::string& file)`: Set the log file
+- `void setLogFileRolling(size_t max_file_size, int max_backup_index)`: Set up log file rolling based on size and backup index
+- `void shutdown()`: Shutdown the logger and release resources
 
 #### Logging Macros
 - `SMF_LOGGER_INIT(level)`: Initialize the logger with a specific log level

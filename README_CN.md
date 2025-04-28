@@ -37,12 +37,22 @@ StateMachine_Frame/
 ├── README_CN.md              # 中文文档
 ├── run_test.sh               # 运行测试脚本
 ├── state_machine/            # 核心库实现
-│   ├── logger.h              # 日志实现
-│   └── state_machine.h       # 主FSM实现
+│   ├── include/              # 头文件
+│   │   ├── common_define.h   # 通用定义
+│   │   ├── event.h           # 事件处理
+│   │   ├── logger.h          # 日志实现
+│   │   ├── state_event_handler.h  # 状态事件处理器
+│   │   └── state_machine.h   # 主FSM实现
+│   └── src/                  # 源文件
+│       └── state_machine.cpp # 实现文件
 ├── test/                     # 测试文件
 │   ├── CMakeLists.txt        # 测试构建配置
 │   ├── comprehensive_test/   # 全面测试
-│   │   └── comprehensive_test.cpp  # 智能家居系统测试示例
+│   │   ├── comprehensive_test.cpp  # 智能家居系统测试
+│   │   └── state_hierarchy_test.cpp # 层次状态测试
+│   ├── conditions_event/     # 基于条件的事件测试
+│   │   ├── condition_event_test.cpp  # 条件事件测试
+│   │   └── config/           # 测试配置
 │   └── main_test/            # 基本测试
 │       └── main_test.cpp     # 基本功能测试
 └── third_party/              # 外部依赖
@@ -57,7 +67,8 @@ StateMachine_Frame/
 
 1. **状态和事件类型**
   - `State`：表示为`std::string`。
-  - `Event`：表示为`std::string`。
+  - `Event`：表示事件的类，包含事件名称和匹配条件信息。
+  - `EventPtr`：定义为`std::shared_ptr<Event>`，用于更安全的事件处理。
 
 2. **条件类型**
   ```cpp
@@ -71,36 +82,44 @@ StateMachine_Frame/
 3. **条件值**
   ```cpp
   struct ConditionValue {
-    std::string name;                                 // 条件名称
-    int value;                                        // 条件当前值
-    std::chrono::steady_clock::time_point lastUpdateTime;  // 最后一次更新时间
-    std::chrono::steady_clock::time_point lastChangedTime; // 上次值变化的时间
-    bool isTriggered;                                 // 是否已触发(用于持续条件)
+    std::string name;                                       // 条件名称
+    int value;                                              // 条件当前值
+    std::chrono::steady_clock::time_point lastUpdateTime;   // 最后一次更新时间
+    std::chrono::steady_clock::time_point lastChangedTime;  // 上次值变化的时间
   };
   ```
 
-4. **事件定义结构体**
+4. **条件信息**
+  ```cpp
+  struct ConditionInfo {
+    std::string name;  // 条件名称
+    int value;         // 条件值
+    long duration;     // 条件已满足的持续时间（毫秒）
+  };
+  ```
+
+5. **事件定义结构体**
   ```cpp
   struct EventDefinition {
-    std::string name;               // 事件名称
-    std::string trigger_mode;       // 触发模式：edge (边缘触发) 或 level (水平触发)
+    std::string name;                   // 事件名称
+    std::string trigger_mode;           // 触发模式：edge (边缘触发) 或 level (水平触发)
     std::vector<Condition> conditions;  // 触发事件的条件列表
-    std::string conditionsOperator; // 条件运算符 ("AND" 或 "OR")
+    std::string conditionsOperator;     // 条件运算符 ("AND" 或 "OR")
   };
   ```
 
-5. **状态转换规则**
+6. **状态转换规则**
   ```cpp
   struct TransitionRule {
     State from;                         // 起始状态
-    Event event;                        // 事件（可为空）
+    std::string event;                  // 事件（可为空）
     State to;                           // 目标状态
     std::vector<Condition> conditions;  // 条件列表
     std::string conditionsOperator;     // 条件运算符 ("AND" 或 "OR")
   };
   ```
 
-6. **状态信息**
+7. **状态信息**
   ```cpp
   struct StateInfo {
     State name;                   // 状态名称
@@ -109,7 +128,7 @@ StateMachine_Frame/
   };
   ```
 
-7. **条件更新事件**
+8. **条件更新事件**
   ```cpp
   struct ConditionUpdateEvent {
     std::string name;
@@ -118,56 +137,57 @@ StateMachine_Frame/
   };
   ```
 
-8. **持续条件**
+9. **持续条件**
   ```cpp
   struct DurationCondition {
     std::string name;
-    int value;  // 触发条件时的值
+    int value;        // 触发条件时的值
+    int duration;     // 持续时间（毫秒）
     std::chrono::steady_clock::time_point expiryTime;
   };
   ```
 
-9. **状态事件处理器**
+10. **状态事件处理器**
   ```cpp
   class StateEventHandler {
   public:
     // 回调函数类型
-    using TransitionCallback = std::function<void(const std::vector<State>&, const Event&, const std::vector<State>&)>;
-    using PreEventCallback = std::function<bool(const State&, const Event&)>;
+    using TransitionCallback = std::function<void(const std::vector<State>&, const EventPtr&, const std::vector<State>&)>;
+    using PreEventCallback = std::function<bool(const State&, const EventPtr&)>;
     using EnterStateCallback = std::function<void(const std::vector<State>&)>;
     using ExitStateCallback = std::function<void(const std::vector<State>&)>;
-    using PostEventCallback = std::function<void(const Event&, bool)>;
+    using PostEventCallback = std::function<void(const EventPtr&, bool)>;
     
     // 设置回调函数
-    void setTransitionCallback(TransitionCallback callback);
-    void setPreEventCallback(PreEventCallback callback);
-    void setEnterStateCallback(EnterStateCallback callback);
-    void setExitStateCallback(ExitStateCallback callback);
-    void setPostEventCallback(PostEventCallback callback);
+    void SetTransitionCallback(TransitionCallback callback);
+    void SetPreEventCallback(PreEventCallback callback);
+    void SetEnterStateCallback(EnterStateCallback callback);
+    void SetExitStateCallback(ExitStateCallback callback);
+    void SetPostEventCallback(PostEventCallback callback);
     
     // 支持类成员函数的回调设置方法
     template<typename T>
-    void setTransitionCallback(T* instance, void (T::*method)(const std::vector<State>&, const Event&, const std::vector<State>&));
+    void SetTransitionCallback(T* instance, void (T::*method)(const std::vector<State>&, const EventPtr&, const std::vector<State>&));
     
     template<typename T>
-    void setPreEventCallback(T* instance, bool (T::*method)(const State&, const Event&));
+    void SetPreEventCallback(T* instance, bool (T::*method)(const State&, const EventPtr&));
     
     template<typename T>
-    void setEnterStateCallback(T* instance, void (T::*method)(const std::vector<State>&));
+    void SetEnterStateCallback(T* instance, void (T::*method)(const std::vector<State>&));
     
     template<typename T>
-    void setExitStateCallback(T* instance, void (T::*method)(const std::vector<State>&));
+    void SetExitStateCallback(T* instance, void (T::*method)(const std::vector<State>&));
     
     template<typename T>
-    void setPostEventCallback(T* instance, void (T::*method)(const Event&, bool));
+    void SetPostEventCallback(T* instance, void (T::*method)(const EventPtr&, bool));
     
     // 内部调用方法
-    void onTransition(const std::vector<State>& fromStates, const Event& event, 
+    void OnTransition(const std::vector<State>& fromStates, const EventPtr& event, 
                      const std::vector<State>& toStates);
-    bool onPreEvent(const State& currentState, const Event& event);
-    void onEnterState(const std::vector<State>& states);
-    void onExitState(const std::vector<State>& states);
-    void onPostEvent(const Event& event, bool handled);
+    bool OnPreEvent(const State& currentState, const EventPtr& event);
+    void OnEnterState(const std::vector<State>& states);
+    void OnExitState(const std::vector<State>& states);
+    void OnPostEvent(const EventPtr& event, bool handled);
   };
   ```
   - 提供基于回调的灵活状态转换处理：
@@ -178,22 +198,26 @@ StateMachine_Frame/
   - 接收完整的状态层次结构而非单个状态
   - 能够在知道整个状态上下文的情况下处理转换
 
-10. **有限状态机类**
+11. **有限状态机类**
   - 管理状态机的核心类：
-    - 初始化：从JSON文件加载配置。
-    - 事件处理：异步处理事件。
-    - 条件处理：更新和检查条件。
-    - 状态转换：基于事件或条件触发转换。
-    - 事件生成：基于条件自动生成事件。
+    - 初始化：从JSON文件加载配置
+    - 事件处理：异步处理事件
+    - 条件处理：更新和检查条件
+    - 状态转换：基于事件或条件触发转换
+    - 事件生成：基于条件自动生成事件
+    - 定时器管理：处理基于时间的（持续）条件
 
-11. **日志记录器类**
+12. **日志记录器类**
   ```cpp
   class Logger {
   public:
-    static Logger& getInstance();
-    void setLogLevel(LogLevel level);
-    LogLevel getLogLevel() const;
-    void log(LogLevel level, const std::string& file, int line, const std::string& message);
+    static Logger& GetInstance();
+    void SetLogLevel(LogLevel level);
+    LogLevel GetLogLevel() const;
+    void Log(LogLevel level, const std::string& file, int line, const std::string& message);
+    void SetLogFile(const std::string& file);
+    void SetLogFileRolling(size_t max_file_size, int max_backup_index);
+    void Shutdown();
   private:
     Logger();
     // 线程安全实现，使用互斥锁
@@ -202,6 +226,7 @@ StateMachine_Frame/
   - 线程安全的单例日志记录器，支持多种日志级别
   - 包含文件名、行号和时间戳信息
   - 提供便捷的日志级别宏定义
+  - 支持文件日志和日志轮转功能
 
 ---
 
@@ -459,11 +484,11 @@ SMF_LOGE("这是一条错误信息");
 - `template<typename T> void setPostEventCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为事件回收回调
 
 #### 内部处理方法
-- `void onTransition(const std::vector<State>& fromStates, const Event& event, const std::vector<State>& toStates)`：处理状态转换
-- `bool onPreEvent(const State& currentState, const Event& event)`：处理事件预处理
+- `void onTransition(const std::vector<State>& fromStates, const EventPtr& event, const std::vector<State>& toStates)`：处理状态转换
+- `bool onPreEvent(const State& currentState, const EventPtr& event)`：处理事件预处理
 - `void onEnterState(const std::vector<State>& states)`：处理状态进入
 - `void onExitState(const std::vector<State>& states)`：处理状态退出
-- `void onPostEvent(const Event& event, bool handled)`：处理事件回收
+- `void onPostEvent(const EventPtr& event, bool handled)`：处理事件回收
 
 ### Logger 类
 
@@ -475,13 +500,9 @@ SMF_LOGE("这是一条错误信息");
 - `void setLogLevel(LogLevel level)`：设置要显示的最低日志级别
 - `LogLevel getLogLevel() const`：获取当前最低日志级别
 - `void log(LogLevel level, const std::string& file, int line, const std::string& message)`：记录日志消息
-
-#### 日志宏定义
-- `SMF_LOGGER_INIT(level)`：使用特定日志级别初始化日志记录器
-- `SMF_LOGD(message)`：记录调试消息
-- `SMF_LOGI(message)`：记录信息消息
-- `SMF_LOGW(message)`：记录警告消息
-- `SMF_LOGE(message)`：记录错误消息
+- `void setLogFile(const std::string& file)`：设置日志文件
+- `void setLogFileRolling(size_t max_file_size, int max_backup_index)`：设置日志文件滚动策略
+- `void shutdown()`：关闭日志记录器
 
 ---
 

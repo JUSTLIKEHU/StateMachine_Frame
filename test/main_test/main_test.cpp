@@ -69,6 +69,7 @@ void conditionThread(smf::FiniteStateMachine& fsm) {
 int main() {
   // 初始化日志系统
   SMF_LOGGER_INIT(smf::LogLevel::DEBUG);
+  SMF_LOGGER_SET_FILE("fsm_test.log");  // 设置日志文件
 
   smf::FiniteStateMachine fsm;
 
