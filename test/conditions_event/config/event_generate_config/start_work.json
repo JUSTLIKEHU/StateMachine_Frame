@@ -1,0 +1,23 @@
+{
+  "name": "START_WORK",
+  "trigger_mode": "edge",
+  "conditions": [
+    {
+      "name": "power",
+      "range": [
+        1,
+        1
+      ],
+      "duration": 1000
+    },
+    {
+      "name": "system_ready",
+      "range": [
+        1,
+        1
+      ],
+      "duration": 500
+    }
+  ],
+  "conditions_operator": "AND"
+}

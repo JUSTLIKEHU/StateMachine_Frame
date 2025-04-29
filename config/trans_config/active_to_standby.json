@@ -1,0 +1,5 @@
+{
+    "from": "ACTIVE",
+    "to": "STAND_BY",
+    "event": "USER_STOP"
+} 

@@ -1,0 +1,14 @@
+{
+  "states": [
+    {
+      "name": "INIT"
+    },
+    {
+      "name": "WORKING"
+    },
+    {
+      "name": "ERROR"
+    }
+  ],
+  "initial_state": "INIT"
+}

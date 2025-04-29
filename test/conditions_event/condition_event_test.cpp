@@ -35,10 +35,12 @@ int main() {
   SMF_LOGGER_INIT(smf::LogLevel::DEBUG);
   // 配置状态机
   FiniteStateMachine stateMachine;
-  std::string configPath = "../../test/conditions_event/config/condition_event_test.json";
+  std::string configPath = "../../test/conditions_event/config";
 
   // 初始化状态机
-  if (!stateMachine.Init(configPath)) {
+  if (!stateMachine.Init(configPath + "/state_config.json",
+                         configPath + "/event_generate_config",
+                         configPath + "/trans_config")) {
     SMF_LOGE("初始化状态机失败！");
     return 1;
   }

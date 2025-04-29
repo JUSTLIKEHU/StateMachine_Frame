@@ -1,0 +1,5 @@
+{
+  "from": "WORKING",
+  "to": "ERROR",
+  "event": "SYSTEM_ERROR"
+}

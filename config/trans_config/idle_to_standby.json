@@ -1,0 +1,21 @@
+{
+    "from": "IDLE",
+    "to": "STAND_BY",
+    "conditions": [
+        {
+            "name": "service_ready",
+            "range": [
+                1,
+                1
+            ]
+        },
+        {
+            "name": "is_connected",
+            "range": [
+                1,
+                1
+            ]
+        }
+    ],
+    "conditions_operator": "AND"
+} 

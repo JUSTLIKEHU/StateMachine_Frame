@@ -77,6 +77,11 @@ class FiniteStateMachine {
   // 初始化接口
   bool Init(const std::string& configFile);
 
+  // 新增: 优化的初始化接口，允许分别指定各配置文件路径
+  bool Init(const std::string& stateConfigFile,
+            const std::string& eventGenerateConfigDir,
+            const std::string& transConfigDir);
+
   // 启动状态机
   bool Start();
 
@@ -192,7 +197,12 @@ class FiniteStateMachine {
 
  private:
   // 从 JSON 文件加载状态机配置
-  void LoadFromJSON(const std::string& filepath);
+  void LoadFromJSON(const std::string& configPath);
+
+  // 新增: 从分离的JSON文件加载状态机配置
+  void LoadFromJSON(const std::string& stateConfigFile,
+                    const std::string& eventGenerateConfigDir,
+                    const std::string& transConfigDir);
 
   // 事件处理循环 - 专注于处理事件队列
   void EventLoop();

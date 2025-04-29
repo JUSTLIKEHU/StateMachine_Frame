@@ -1,0 +1,15 @@
+{
+  "name": "SYSTEM_ERROR",
+  "trigger_mode": "edge",
+  "conditions": [
+    {
+      "name": "error_code",
+      "range": [
+        1,
+        10
+      ],
+      "duration": 0
+    }
+  ],
+  "conditions_operator": "AND"
+}

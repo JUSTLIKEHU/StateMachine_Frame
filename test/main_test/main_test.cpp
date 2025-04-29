@@ -88,7 +88,10 @@ int main() {
   // return 0;
 
   try {
-    if (!fsm.Init("../../config/fsm_config.json")) {
+    // 使用新的初始化接口，分别指定各配置文件路径
+    if (!fsm.Init("../../config/state_config.json", 
+                  "../../config/event_generate_config", 
+                  "../../config/trans_config")) {
       SMF_LOGE("Failed to initialize state machine");
       return 1;
     }

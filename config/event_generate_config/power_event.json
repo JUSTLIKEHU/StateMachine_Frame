@@ -1,0 +1,14 @@
+{
+    "name": "POWER_CHANGE",
+    "trigger_mode": "edge",
+    "conditions": [
+        {
+            "name": "is_powered",
+            "range": [
+                1,
+                1
+            ]
+        }
+    ],
+    "conditions_operator": "AND"
+} 

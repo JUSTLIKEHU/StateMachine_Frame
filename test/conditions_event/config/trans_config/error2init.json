@@ -1,0 +1,14 @@
+{
+  "from": "ERROR",
+  "to": "INIT",
+  "conditions": [
+    {
+      "name": "error_code",
+      "range": [
+        0,
+        0
+      ],
+      "duration": 0
+    }
+  ]
+}

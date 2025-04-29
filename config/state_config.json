@@ -1,0 +1,27 @@
+{
+    "states": [
+        {
+            "name": "OFF"
+        },
+        {
+            "name": "ON"
+        },
+        {
+            "name": "IDLE",
+            "parent": "ON"
+        },
+        {
+            "name": "STAND_BY",
+            "parent": "ON"
+        },
+        {
+            "name": "ACTIVE",
+            "parent": "ON"
+        },
+        {
+            "name": "PAUSED",
+            "parent": "ON"
+        }
+    ],
+    "initial_state": "OFF"
+} 

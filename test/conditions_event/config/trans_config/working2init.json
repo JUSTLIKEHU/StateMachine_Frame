@@ -1,0 +1,14 @@
+{
+  "from": "WORKING",
+  "to": "INIT",
+  "conditions": [
+    {
+      "name": "START_WORK",
+      "range": [
+        0,
+        0
+      ],
+      "duration": 0
+    }
+  ]
+}

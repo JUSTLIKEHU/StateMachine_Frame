@@ -1,0 +1,14 @@
+{
+    "from": "ACTIVE",
+    "to": "PAUSED",
+    "conditions": [
+        {
+            "name": "is_paused",
+            "range": [
+                1,
+                1
+            ]
+        }
+    ],
+    "conditions_operator": "AND"
+} 

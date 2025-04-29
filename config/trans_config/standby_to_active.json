@@ -1,0 +1,5 @@
+{
+    "from": "STAND_BY",
+    "to": "ACTIVE",
+    "event": "START"
+} 

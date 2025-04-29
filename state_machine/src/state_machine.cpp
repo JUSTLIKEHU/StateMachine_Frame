@@ -34,7 +34,9 @@
 #include "state_machine.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <mutex>
+#include <stdexcept>
 #include <vector>
 
 #include "common_define.h"
@@ -45,7 +47,35 @@ namespace smf {
 
 bool FiniteStateMachine::Init(const std::string& configFile) {
   try {
-    LoadFromJSON(configFile);
+    // 判断给定的路径是文件还是目录
+    std::filesystem::path path(configFile);
+
+    if (std::filesystem::is_regular_file(path)) {
+      // 如果是状态配置文件，则提取目录部分作为配置根目录
+      std::string configDir = path.parent_path().string();
+      std::string eventConfigDir = configDir + "/event_generate_config";
+      std::string transConfigDir = configDir + "/trans_config";
+
+      return Init(configFile, eventConfigDir, transConfigDir);
+    } else {
+      // 如果是目录，按照原有逻辑使用子目录
+      std::string stateConfigFile = configFile + "/state_config.json";
+      std::string eventConfigDir = configFile + "/event_generate_config";
+      std::string transConfigDir = configFile + "/trans_config";
+
+      return Init(stateConfigFile, eventConfigDir, transConfigDir);
+    }
+  } catch (const std::exception& e) {
+    SMF_LOGE("Initialization failed: " + std::string(e.what()));
+    return false;
+  }
+}
+
+bool FiniteStateMachine::Init(const std::string& stateConfigFile,
+                              const std::string& eventGenerateConfigDir,
+                              const std::string& transConfigDir) {
+  try {
+    LoadFromJSON(stateConfigFile, eventGenerateConfigDir, transConfigDir);
     initialized_ = true;
     return true;
   } catch (const std::exception& e) {
@@ -230,68 +260,118 @@ void FiniteStateMachine::SetConditionValue(const std::string& name, int value) {
   condition_update_cv_.notify_one();  // 通知条件处理线程
 }
 
-void FiniteStateMachine::LoadFromJSON(const std::string& filepath) {
-  std::ifstream file(filepath);
-  if (!file.is_open()) {
-    throw std::runtime_error("Failed to open JSON file");
+void FiniteStateMachine::LoadFromJSON(const std::string& configPath) {
+  // 判断给定的路径是文件还是目录
+  std::filesystem::path path(configPath);
+  std::string stateConfigPath;
+  std::string configDir;
+
+  if (std::filesystem::is_regular_file(path)) {
+    // 如果是文件，直接使用这个文件
+    stateConfigPath = configPath;
+    // 提取目录部分
+    configDir = path.parent_path().string();
+  } else {
+    // 如果是目录，拼接路径
+    configDir = configPath;
+    stateConfigPath = configDir + "/state_config.json";
   }
 
-  json config;
-  file >> config;
+  std::string eventConfigDir = configDir + "/event_generate_config";
+  std::string transConfigDir = configDir + "/trans_config";
+
+  LoadFromJSON(stateConfigPath, eventConfigDir, transConfigDir);
+}
+
+void FiniteStateMachine::LoadFromJSON(const std::string& stateConfigFile,
+                                      const std::string& eventGenerateConfigDir,
+                                      const std::string& transConfigDir) {
+  // 加载状态配置
+  std::ifstream stateFile(stateConfigFile);
+  if (!stateFile.is_open()) {
+    throw std::runtime_error("Failed to open state config file: " + stateConfigFile);
+  }
+
+  json stateConfig;
+  stateFile >> stateConfig;
 
   // 加载状态
-  for (const auto& state : config["states"]) {
+  for (const auto& state : stateConfig["states"]) {
     State name = state["name"];
     State parent = state.value("parent", "");
     AddState(name, parent);
   }
 
   // 加载初始状态
-  SetInitialState(config["initial_state"]);
+  SetInitialState(stateConfig["initial_state"]);
 
-  // 加载事件定义（新增）
-  if (config.contains("events")) {
-    for (const auto& eventJson : config["events"]) {
-      EventDefinition eventDef;
-      eventDef.name = eventJson["name"];
-      eventDef.trigger_mode = eventJson.value("trigger_mode", "edge");  // 默认为边缘触发
-      eventDef.conditionsOperator = eventJson.value("conditions_operator", "AND");  // 默认为AND条件
-
-      // 加载条件
-      if (eventJson.contains("conditions")) {
-        for (const auto& condition : eventJson["conditions"]) {
-          Condition cond;
-          cond.name = condition["name"];
-          cond.range = {condition["range"][0], condition["range"][1]};
-          cond.duration = condition.value("duration", 0);  // 默认为0
-          eventDef.conditions.push_back(cond);
-          all_conditions_.push_back(cond);
-        }
-      }
-      // 添加到事件定义列表
-      event_definitions_.push_back(eventDef);
+  // 加载事件定义
+  for (const auto& entry : std::filesystem::directory_iterator(eventGenerateConfigDir)) {
+    if (!entry.is_regular_file() || entry.path().extension() != ".json") {
+      throw std::runtime_error(entry.path().string() + " is not json file");
     }
-  }
 
-  // 加载状态转移规则
-  for (const auto& transition : config["transitions"]) {
-    TransitionRule rule;
-    rule.from = transition["from"];
-    rule.event = transition.value("event", "");  // 事件可为空
-    rule.to = transition["to"];
-    rule.conditionsOperator = transition.value("conditions_operator", "AND");
+    std::ifstream eventFile(entry.path());
+    if (!eventFile.is_open()) {
+      throw std::runtime_error("Failed to open event config file: " + entry.path().string());
+    }
+
+    json eventJson;
+    eventFile >> eventJson;
+
+    EventDefinition eventDef;
+    eventDef.name = eventJson["name"];
+    eventDef.trigger_mode = eventJson.value("trigger_mode", "edge");
+    eventDef.conditionsOperator = eventJson.value("conditions_operator", "AND");
 
     // 加载条件
-    if (transition.contains("conditions")) {
-      for (const auto& condition : transition["conditions"]) {
+    if (eventJson.contains("conditions")) {
+      for (const auto& condition : eventJson["conditions"]) {
         Condition cond;
         cond.name = condition["name"];
         cond.range = {condition["range"][0], condition["range"][1]};
-        cond.duration = condition.value("duration", 0);  // 默认为0
+        cond.duration = condition.value("duration", 0);
+        eventDef.conditions.push_back(cond);
+        all_conditions_.push_back(cond);
+      }
+    }
+
+    // 添加到事件定义列表
+    event_definitions_.push_back(eventDef);
+  }
+
+  // 加载状态转移规则
+  for (const auto& entry : std::filesystem::directory_iterator(transConfigDir)) {
+    if (!entry.is_regular_file() || entry.path().extension() != ".json") {
+      throw std::runtime_error(entry.path().string() + " is not json file");
+    }
+
+    std::ifstream transFile(entry.path());
+    if (!transFile.is_open()) {
+      throw std::runtime_error("Failed to open transition config file: " + entry.path().string());
+    }
+
+    json transJson;
+    transFile >> transJson;
+
+    TransitionRule rule;
+    rule.from = transJson["from"];
+    rule.event = transJson.value("event", "");
+    rule.to = transJson["to"];
+    rule.conditionsOperator = transJson.value("conditions_operator", "AND");
+
+    // 加载条件
+    if (transJson.contains("conditions")) {
+      for (const auto& condition : transJson["conditions"]) {
+        Condition cond;
+        cond.name = condition["name"];
+        cond.range = {condition["range"][0], condition["range"][1]};
+        cond.duration = condition.value("duration", 0);
         rule.conditions.push_back(cond);
         all_conditions_.push_back(cond);
       }
     }
+
     AddTransition(rule);
   }
 
