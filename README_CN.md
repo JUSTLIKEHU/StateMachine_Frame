@@ -20,7 +20,7 @@
 - **多种触发模式**：支持边缘触发和水平触发两种事件触发模式。
 - **条件自动管理**：为定义的事件自动创建同名条件，简化状态跟踪。
 - **优先级队列定时器**：使用优先级队列高效管理定时条件。
-- **细粒度线程同步**：为事件、条件和状态使用独立的互斥锁和条件变量，提高并发性能。
+- **细粒度线程同步**：为事件、条件、状态、定时器和事件触发使用独立的互斥锁，提高并发性能。
 
 ---
 
@@ -200,12 +200,13 @@ StateMachine_Frame/
 
 11. **有限状态机类**
   - 管理状态机的核心类：
-    - 初始化：从JSON文件加载配置
-    - 事件处理：异步处理事件
-    - 条件处理：更新和检查条件
-    - 状态转换：基于事件或条件触发转换
+    - 初始化：从JSON文件或分离的配置文件加载配置
+    - 事件处理：使用专用互斥锁异步处理事件
+    - 条件处理：使用专用互斥锁更新和检查条件
+    - 状态转换：基于事件或条件触发转换，使用状态互斥锁保护
     - 事件生成：基于条件自动生成事件
-    - 定时器管理：处理基于时间的（持续）条件
+    - 定时器管理：使用定时器互斥锁处理基于时间的（持续）条件
+    - 事件触发：使用专用互斥锁处理事件触发
 
 12. **日志记录器类**
   ```cpp
@@ -235,41 +236,51 @@ StateMachine_Frame/
 ### 1. 定义状态和转换
 可以通过编程方式定义状态和转换，或者从JSON文件加载。
 
-#### JSON配置示例
+#### JSON配置示例（分离文件模式）
+
+##### 状态配置 (state_config.json)
 ```json
 {
   "states": [
-   {"name": "OFF", "parent": ""},
-   {"name": "ON", "parent": ""},
-   {"name": "ACTIVE", "parent": "ON"}
+    {"name": "OFF"},
+    {"name": "ON"},
+    {"name": "IDLE", "parent": "ON"},
+    {"name": "STAND_BY", "parent": "ON"},
+    {"name": "ACTIVE", "parent": "ON"},
+    {"name": "PAUSED", "parent": "ON"}
   ],
-  "initial_state": "OFF",
-  "events": [
-   {
-    "name": "power_changed",
-    "trigger_mode": "edge",
-    "conditions": [
-      {"name": "power", "range": [1, 100]}
-    ],
-    "conditions_operator": "AND"
-   }
+  "initial_state": "OFF"
+}
+```
+
+##### 事件生成配置 (event_generate_config/power_event.json)
+```json
+{
+  "name": "POWER_CHANGE",
+  "trigger_mode": "edge",
+  "conditions": [
+    {
+      "name": "is_powered",
+      "range": [1, 1]
+    }
   ],
-  "transitions": [
-   {
-    "from": "OFF",
-    "event": "turn_on",
-    "to": "ON",
-    "conditions": [
-      {"name": "power", "range": [1, 100], "duration": 1000}
-    ],
-    "conditions_operator": "AND"
-   },
-   {
-    "from": "ON",
-    "event": "turn_off",
-    "to": "OFF"
-   }
-  ]
+  "conditions_operator": "AND"
+}
+```
+
+##### 转换规则配置 (trans_config/off_to_idle.json)
+```json
+{
+  "from": "OFF",
+  "to": "IDLE",
+  "conditions": [
+    {
+      "name": "is_powered",
+      "range": [1, 1],
+      "duration": 1000
+    }
+  ],
+  "conditions_operator": "OR"
 }
 ```
 
@@ -280,13 +291,13 @@ StateMachine_Frame/
 ```cpp
 // 创建并配置处理器
 auto handler = createLightStateHandler();  // 使用提供的辅助函数
-fsm.setStateEventHandler(handler);
+fsm.SetStateEventHandler(handler);
 ```
 
 #### 方式2：直接设置单独的lambda回调
 ```cpp
 // 状态转换回调
-fsm.setTransitionCallback([](const std::vector<State>& fromStates, const Event& event, 
+fsm.SetTransitionCallback([](const std::vector<State>& fromStates, const EventPtr& event, 
                            const std::vector<State>& toStates) {
   State from = fromStates.empty() ? "" : fromStates[0];
   State to = toStates.empty() ? "" : toStates[0];
@@ -297,14 +308,14 @@ fsm.setTransitionCallback([](const std::vector<State>& fromStates, const Event& 
 });
 
 // 状态进入回调
-fsm.setEnterStateCallback([](const std::vector<State>& states) {
+fsm.SetEnterStateCallback([](const std::vector<State>& states) {
   if (!states.empty() && states[0] == "ON") {
     std::cout << "正在进入ON状态，激活设备..." << std::endl;
   }
 });
 
 // 状态退出回调
-fsm.setExitStateCallback([](const std::vector<State>& states) {
+fsm.SetExitStateCallback([](const std::vector<State>& states) {
   if (!states.empty() && states[0] == "ON") {
     std::cout << "正在退出ON状态，关闭设备..." << std::endl;
   }
@@ -317,23 +328,23 @@ fsm.setExitStateCallback([](const std::vector<State>& states) {
 auto controller = std::make_shared<LightController>();
 
 // 绑定类成员函数作为回调
-fsm.setTransitionCallback(controller.get(), &LightController::handleTransition);
-fsm.setPreEventCallback(controller.get(), &LightController::validateEvent);
-fsm.setEnterStateCallback(controller.get(), &LightController::onEnter);
-fsm.setExitStateCallback(controller.get(), &LightController::onExit);
-fsm.setPostEventCallback(controller.get(), &LightController::afterEvent);
+fsm.SetTransitionCallback(controller.get(), &LightController::handleTransition);
+fsm.SetPreEventCallback(controller.get(), &LightController::validateEvent);
+fsm.SetEnterStateCallback(controller.get(), &LightController::onEnter);
+fsm.SetExitStateCallback(controller.get(), &LightController::onExit);
+fsm.SetPostEventCallback(controller.get(), &LightController::afterEvent);
 
 // 示例控制器类
 class LightController {
 public:
   // 状态转换处理
-  void handleTransition(const std::vector<State>& fromStates, const Event& event, 
+  void handleTransition(const std::vector<State>& fromStates, const EventPtr& event, 
                       const std::vector<State>& toStates) {
     // 实现状态转换逻辑
   }
   
   // 事件验证
-  bool validateEvent(const State& state, const Event& event) {
+  bool validateEvent(const State& state, const EventPtr& event) {
     // 返回true表示允许事件，false表示拒绝
     return true;
   }
@@ -348,21 +359,27 @@ int main() {
    FiniteStateMachine fsm;
    
    // 设置状态事件处理器回调
-   fsm.setTransitionCallback([](const std::vector<State>& fromStates, 
-                              const Event& event,
+   fsm.SetTransitionCallback([](const std::vector<State>& fromStates, 
+                              const EventPtr& event,
                               const std::vector<State>& toStates) {
      // 处理状态转换
    });
    
-   fsm.Init("config.json"); // 加载配置
-   fsm.start(); // 启动状态机
+   // 方式1：使用单一配置文件初始化
+   fsm.Init("config.json");
+   
+   // 方式2：使用分离的配置文件初始化
+   fsm.Init("state_config.json", "event_generate_config_dir", "trans_config_dir");
+   
+   // 启动状态机
+   fsm.Start();
 
    // 触发事件和条件
-   fsm.handleEvent("turn_on");
-   fsm.setConditionValue("power", 50);
+   fsm.HandleEvent(std::make_shared<Event>("turn_on"));
+   fsm.SetConditionValue("power", 50);
 
    // 停止状态机
-   fsm.stop();
+   fsm.Stop();
    return 0;
 }
 ```
@@ -426,39 +443,48 @@ SMF_LOGE("这是一条错误信息");
 - `~FiniteStateMachine()`：析构函数，停止状态机并清理资源
 
 #### 初始化和控制方法
-- `bool Init(const std::string& configFile)`：从JSON文件加载状态机配置
-- `bool start()`：启动状态机及其工作线程
-- `void stop()`：停止状态机及其工作线程
+- `bool Init(const std::string& configFile)`：从单一JSON文件加载状态机配置
+- `bool Init(const std::string& stateConfigFile, const std::string& eventGenerateConfigDir, const std::string& transConfigDir)`：从分离的JSON文件加载状态机配置
+- `bool Start()`：启动状态机及其工作线程
+- `void Stop()`：停止状态机及其工作线程
 
 #### 事件处理
-- `void handleEvent(const Event& event)`：异步触发事件
+- `void HandleEvent(const EventPtr& event)`：异步触发事件
 
 #### 条件处理
-- `void setConditionValue(const std::string& name, int value)`：异步更新条件值
+- `void SetConditionValue(const std::string& name, int value)`：异步更新条件值
 
 #### 状态管理
-- `State getCurrentState() const`：获取当前状态
-- `void setInitialState(const State& state)`：设置初始状态
-- `void addState(const State& name, const State& parent = "")`：添加新状态
-- `void addTransition(const TransitionRule& rule)`：添加状态转换规则
-- `void loadFromJSON(const std::string& filepath)`：从JSON文件加载状态机配置
+- `State GetCurrentState() const`：获取当前状态
+- `void SetInitialState(const State& state)`：设置初始状态
+- `void AddState(const State& name, const State& parent = "")`：添加新状态
+- `void AddTransition(const TransitionRule& rule)`：添加状态转换规则
+- `std::vector<State> GetStateHierarchy(const State& state) const`：获取一个状态及其所有父状态（从子到父的顺序）
+- `void GetStateHierarchy(const State& from, const State& to, std::vector<State>& exit_states, std::vector<State>& enter_states) const`：获取从一个状态转换到另一个状态时需要退出和进入的状态
 
 #### 状态事件处理器方法
-- `void setStateEventHandler(std::shared_ptr<StateEventHandler> handler)`：设置完整的状态事件处理器
+- `void SetStateEventHandler(std::shared_ptr<StateEventHandler> handler)`：设置完整的状态事件处理器
 
 ##### 函数对象回调设置
-- `void setTransitionCallback(StateEventHandler::TransitionCallback callback)`：设置状态转换回调
-- `void setPreEventCallback(StateEventHandler::PreEventCallback callback)`：设置事件预处理回调
-- `void setEnterStateCallback(StateEventHandler::EnterStateCallback callback)`：设置状态进入回调
-- `void setExitStateCallback(StateEventHandler::ExitStateCallback callback)`：设置状态退出回调
-- `void setPostEventCallback(StateEventHandler::PostEventCallback callback)`：设置事件回收回调
+- `void SetTransitionCallback(StateEventHandler::TransitionCallback callback)`：设置状态转换回调
+- `void SetPreEventCallback(StateEventHandler::PreEventCallback callback)`：设置事件预处理回调
+- `void SetEnterStateCallback(StateEventHandler::EnterStateCallback callback)`：设置状态进入回调
+- `void SetExitStateCallback(StateEventHandler::ExitStateCallback callback)`：设置状态退出回调
+- `void SetPostEventCallback(StateEventHandler::PostEventCallback callback)`：设置事件回收回调
 
 ##### 类成员函数回调设置
-- `template<typename T> void setTransitionCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为状态转换回调
-- `template<typename T> void setPreEventCallback(T* instance, bool (T::*method)(...))`：设置类成员函数作为事件预处理回调
-- `template<typename T> void setEnterStateCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为状态进入回调
-- `template<typename T> void setExitStateCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为状态退出回调
-- `template<typename T> void setPostEventCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为事件回收回调
+- `template<typename T> void SetTransitionCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为状态转换回调
+- `template<typename T> void SetPreEventCallback(T* instance, bool (T::*method)(...))`：设置类成员函数作为事件预处理回调
+- `template<typename T> void SetEnterStateCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为状态进入回调
+- `template<typename T> void SetExitStateCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为状态退出回调
+- `template<typename T> void SetPostEventCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为事件回收回调
+
+#### 内部处理方法
+库包含几个用于内部处理的私有方法：
+- 事件处理循环，用于处理事件队列
+- 条件处理循环，用于处理条件更新
+- 定时器循环，用于管理基于持续时间的条件
+- 事件触发循环，用于根据条件生成事件
 
 ### StateEventHandler 类
 
@@ -470,25 +496,25 @@ SMF_LOGE("这是一条错误信息");
 - `using PostEventCallback`: 事件回收回调函数类型
 
 #### 设置回调方法
-- `void setTransitionCallback(TransitionCallback callback)`：设置状态转换回调
-- `void setPreEventCallback(PreEventCallback callback)`：设置事件预处理回调
-- `void setEnterStateCallback(EnterStateCallback callback)`：设置状态进入回调
-- `void setExitStateCallback(ExitStateCallback callback)`：设置状态退出回调
-- `void setPostEventCallback(PostEventCallback callback)`：设置事件回收回调
+- `void SetTransitionCallback(TransitionCallback callback)`：设置状态转换回调
+- `void SetPreEventCallback(PreEventCallback callback)`：设置事件预处理回调
+- `void SetEnterStateCallback(EnterStateCallback callback)`：设置状态进入回调
+- `void SetExitStateCallback(ExitStateCallback callback)`：设置状态退出回调
+- `void SetPostEventCallback(PostEventCallback callback)`：设置事件回收回调
 
 #### 类成员函数回调设置
-- `template<typename T> void setTransitionCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为状态转换回调
-- `template<typename T> void setPreEventCallback(T* instance, bool (T::*method)(...))`：设置类成员函数作为事件预处理回调
-- `template<typename T> void setEnterStateCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为状态进入回调
-- `template<typename T> void setExitStateCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为状态退出回调
-- `template<typename T> void setPostEventCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为事件回收回调
+- `template<typename T> void SetTransitionCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为状态转换回调
+- `template<typename T> void SetPreEventCallback(T* instance, bool (T::*method)(...))`：设置类成员函数作为事件预处理回调
+- `template<typename T> void SetEnterStateCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为状态进入回调
+- `template<typename T> void SetExitStateCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为状态退出回调
+- `template<typename T> void SetPostEventCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为事件回收回调
 
 #### 内部处理方法
-- `void onTransition(const std::vector<State>& fromStates, const EventPtr& event, const std::vector<State>& toStates)`：处理状态转换
-- `bool onPreEvent(const State& currentState, const EventPtr& event)`：处理事件预处理
-- `void onEnterState(const std::vector<State>& states)`：处理状态进入
-- `void onExitState(const std::vector<State>& states)`：处理状态退出
-- `void onPostEvent(const EventPtr& event, bool handled)`：处理事件回收
+- `void OnTransition(const std::vector<State>& fromStates, const EventPtr& event, const std::vector<State>& toStates)`：处理状态转换
+- `bool OnPreEvent(const State& currentState, const EventPtr& event)`：处理事件预处理
+- `void OnEnterState(const std::vector<State>& states)`：处理状态进入
+- `void OnExitState(const std::vector<State>& states)`：处理状态退出
+- `void OnPostEvent(const EventPtr& event, bool handled)`：处理事件回收
 
 ### Logger 类
 
@@ -496,13 +522,13 @@ SMF_LOGE("这是一条错误信息");
 - `enum class LogLevel { DEBUG, INFO, WARN, ERROR }`：日志级别，从最低到最高严重程度
 
 #### 公共方法
-- `static Logger& getInstance()`：获取日志记录器单例实例
-- `void setLogLevel(LogLevel level)`：设置要显示的最低日志级别
-- `LogLevel getLogLevel() const`：获取当前最低日志级别
-- `void log(LogLevel level, const std::string& file, int line, const std::string& message)`：记录日志消息
-- `void setLogFile(const std::string& file)`：设置日志文件
-- `void setLogFileRolling(size_t max_file_size, int max_backup_index)`：设置日志文件滚动策略
-- `void shutdown()`：关闭日志记录器
+- `static Logger& GetInstance()`：获取日志记录器单例实例
+- `void SetLogLevel(LogLevel level)`：设置要显示的最低日志级别
+- `LogLevel GetLogLevel() const`：获取当前最低日志级别
+- `void Log(LogLevel level, const std::string& file, int line, const std::string& message)`：记录日志消息
+- `void SetLogFile(const std::string& file)`：设置日志文件
+- `void SetLogFileRolling(size_t max_file_size, int max_backup_index)`：设置日志文件滚动策略
+- `void Shutdown()`：关闭日志记录器
 
 ---
 
@@ -591,12 +617,27 @@ graph TD
 
 ---
 
+## 线程同步机制
+
+状态机使用细粒度的同步机制以最大化并发性能：
+
+1. **event_mutex_**：保护事件队列的访问并确保线程安全的事件处理
+2. **condition_update_mutex_**：保护条件更新和条件更新队列
+3. **state_mutex_**：确保线程安全的状态访问和更新
+4. **timer_mutex_**：保护用于基于持续时间的条件的定时器队列
+5. **event_trigger_mutex_**：处理基于条件的事件触发同步
+6. **condition_values_mutex_**：保护条件值存储的访问
+
+这种多互斥锁方法允许不同操作在可能的情况下并行进行，提高整体性能。
+
+---
+
 ## 性能优化
 
 1. **异步事件和条件处理**：通过队列和专用线程减少阻塞
 2. **智能条件触发**：仅在条件发生变化时检查转换规则
 3. **持续条件优化**：使用优先队列高效管理定时条件
-4. **细粒度锁定**：为事件、条件和状态使用单独的互斥锁
+4. **细粒度锁定**：为事件、条件、状态、定时器和触发器使用单独的互斥锁
 5. **条件变量通知**：使用条件变量而非轮询，减少CPU使用率
 6. **事件自动生成**：根据条件变化自动生成相应事件，减少手动触发
 

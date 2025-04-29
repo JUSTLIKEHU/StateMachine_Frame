@@ -20,7 +20,7 @@ This is a C++ implementation of a **Finite State Machine (FSM)** that supports e
 - **Multiple Trigger Modes**: Support for both edge-triggered and level-triggered event modes.
 - **Automatic Condition Management**: Automatically create same-named conditions for defined events, simplifying state tracking.
 - **Priority Queue Timer**: Efficiently manage timed conditions using a priority queue.
-- **Fine-grained Thread Synchronization**: Improve concurrent performance with separate mutexes and condition variables for events, conditions, and states.
+- **Fine-grained Thread Synchronization**: Improve concurrent performance with separate mutexes for events, conditions, states, timers, and event triggers.
 
 ---
 
@@ -200,12 +200,13 @@ StateMachine_Frame/
 
 11. **Finite State Machine Class**
   - Core class for managing the state machine:
-    - Initialization: Load configuration from a JSON file
-    - Event Handling: Process events asynchronously
-    - Condition Handling: Update and check conditions
-    - State Transitions: Trigger transitions based on events or conditions
+    - Initialization: Load configuration from a JSON file or separate configuration files
+    - Event Handling: Process events asynchronously with dedicated mutex
+    - Condition Handling: Update and check conditions with dedicated mutex
+    - State Transitions: Trigger transitions based on events or conditions with state mutex protection
     - Event Generation: Automatically generate events based on condition changes
-    - Timer Management: Handle time-based (duration) conditions
+    - Timer Management: Handle time-based (duration) conditions with timer mutex protection
+    - Event Triggering: Dedicated event trigger handling with separate mutex
 
 12. **Logger Class**
   ```cpp
@@ -235,41 +236,51 @@ StateMachine_Frame/
 ### 1. Define States and Transitions
 States and transitions can be defined programmatically or loaded from a JSON file.
 
-#### Example JSON Configuration
+#### Example JSON Configuration (Separate Files Mode)
+
+##### State Configuration (state_config.json)
 ```json
 {
   "states": [
-   {"name": "OFF", "parent": ""},
-   {"name": "ON", "parent": ""},
-   {"name": "ACTIVE", "parent": "ON"}
+    {"name": "OFF"},
+    {"name": "ON"},
+    {"name": "IDLE", "parent": "ON"},
+    {"name": "STAND_BY", "parent": "ON"},
+    {"name": "ACTIVE", "parent": "ON"},
+    {"name": "PAUSED", "parent": "ON"}
   ],
-  "initial_state": "OFF",
-  "events": [
-   {
-    "name": "power_changed",
-    "trigger_mode": "edge",
-    "conditions": [
-      {"name": "power", "range": [1, 100]}
-    ],
-    "conditions_operator": "AND"
-   }
+  "initial_state": "OFF"
+}
+```
+
+##### Event Generation Configuration (event_generate_config/power_event.json)
+```json
+{
+  "name": "POWER_CHANGE",
+  "trigger_mode": "edge",
+  "conditions": [
+    {
+      "name": "is_powered",
+      "range": [1, 1]
+    }
   ],
-  "transitions": [
-   {
-    "from": "OFF",
-    "event": "turn_on",
-    "to": "ON",
-    "conditions": [
-      {"name": "power", "range": [1, 100], "duration": 1000}
-    ],
-    "conditions_operator": "AND"
-   },
-   {
-    "from": "ON",
-    "event": "turn_off",
-    "to": "OFF"
-   }
-  ]
+  "conditions_operator": "AND"
+}
+```
+
+##### Transition Rule Configuration (trans_config/off_to_idle.json)
+```json
+{
+  "from": "OFF",
+  "to": "IDLE",
+  "conditions": [
+    {
+      "name": "is_powered",
+      "range": [1, 1],
+      "duration": 1000
+    }
+  ],
+  "conditions_operator": "OR"
 }
 ```
 
@@ -280,13 +291,13 @@ There are three ways to handle state events:
 ```cpp
 // Create and configure handler
 auto handler = createLightStateHandler();  // Use provided helper function
-fsm.setStateEventHandler(handler);
+fsm.SetStateEventHandler(handler);
 ```
 
 #### Option 2: Set individual lambda callbacks directly
 ```cpp
 // State transition callback
-fsm.setTransitionCallback([](const std::vector<State>& fromStates, const Event& event, 
+fsm.SetTransitionCallback([](const std::vector<State>& fromStates, const EventPtr& event, 
                            const std::vector<State>& toStates) {
   State from = fromStates.empty() ? "" : fromStates[0];
   State to = toStates.empty() ? "" : toStates[0];
@@ -297,14 +308,14 @@ fsm.setTransitionCallback([](const std::vector<State>& fromStates, const Event& 
 });
 
 // State entry callback
-fsm.setEnterStateCallback([](const std::vector<State>& states) {
+fsm.SetEnterStateCallback([](const std::vector<State>& states) {
   if (!states.empty() && states[0] == "ON") {
     std::cout << "Entering ON state, activating device..." << std::endl;
   }
 });
 
 // State exit callback
-fsm.setExitStateCallback([](const std::vector<State>& states) {
+fsm.SetExitStateCallback([](const std::vector<State>& states) {
   if (!states.empty() && states[0] == "ON") {
     std::cout << "Exiting ON state, shutting down device..." << std::endl;
   }
@@ -317,23 +328,23 @@ fsm.setExitStateCallback([](const std::vector<State>& states) {
 auto controller = std::make_shared<LightController>();
 
 // Bind class member functions as callbacks
-fsm.setTransitionCallback(controller.get(), &LightController::handleTransition);
-fsm.setPreEventCallback(controller.get(), &LightController::validateEvent);
-fsm.setEnterStateCallback(controller.get(), &LightController::onEnter);
-fsm.setExitStateCallback(controller.get(), &LightController::onExit);
-fsm.setPostEventCallback(controller.get(), &LightController::afterEvent);
+fsm.SetTransitionCallback(controller.get(), &LightController::handleTransition);
+fsm.SetPreEventCallback(controller.get(), &LightController::validateEvent);
+fsm.SetEnterStateCallback(controller.get(), &LightController::onEnter);
+fsm.SetExitStateCallback(controller.get(), &LightController::onExit);
+fsm.SetPostEventCallback(controller.get(), &LightController::afterEvent);
 
 // Example controller class
 class LightController {
 public:
   // State transition handler
-  void handleTransition(const std::vector<State>& fromStates, const Event& event, 
+  void handleTransition(const std::vector<State>& fromStates, const EventPtr& event, 
                       const std::vector<State>& toStates) {
     // Implement state transition logic
   }
   
   // Event validation
-  bool validateEvent(const State& state, const Event& event) {
+  bool validateEvent(const State& state, const EventPtr& event) {
     // Return true to allow the event, false to reject
     return true;
   }
@@ -348,21 +359,27 @@ int main() {
    FiniteStateMachine fsm;
    
    // Set state event handler callbacks
-   fsm.setTransitionCallback([](const std::vector<State>& fromStates, 
-                              const Event& event,
+   fsm.SetTransitionCallback([](const std::vector<State>& fromStates, 
+                              const EventPtr& event,
                               const std::vector<State>& toStates) {
      // Handle state transition
    });
    
-   fsm.Init("config.json"); // Load configuration
-   fsm.start(); // Start state machine
+   // Option 1: Initialize with a single configuration file
+   fsm.Init("config.json"); 
+   
+   // Option 2: Initialize with separate configuration files
+   fsm.Init("state_config.json", "event_generate_config_dir", "trans_config_dir");
+   
+   // Start state machine
+   fsm.Start();
 
    // Trigger events and conditions
-   fsm.handleEvent("turn_on");
-   fsm.setConditionValue("power", 50);
+   fsm.HandleEvent(std::make_shared<Event>("turn_on"));
+   fsm.SetConditionValue("power", 50);
 
    // Stop state machine
-   fsm.stop();
+   fsm.Stop();
    return 0;
 }
 ```
@@ -426,46 +443,48 @@ A more complex example that simulates a smart home system with multiple states, 
 - `~FiniteStateMachine()`: Destructor, stops the state machine and cleans up resources
 
 #### Initialization and Control Methods
-- `bool Init(const std::string& configFile)`: Load state machine configuration from a JSON file
-- `bool start()`: Start the state machine and its worker threads
-- `void stop()`: Stop the state machine and its worker threads
+- `bool Init(const std::string& configFile)`: Load state machine configuration from a single JSON file
+- `bool Init(const std::string& stateConfigFile, const std::string& eventGenerateConfigDir, const std::string& transConfigDir)`: Load state machine configuration from separate JSON files
+- `bool Start()`: Start the state machine and its worker threads
+- `void Stop()`: Stop the state machine and its worker threads
 
 #### Event Handling
-- `void handleEvent(const Event& event)`: Trigger an event asynchronously
+- `void HandleEvent(const EventPtr& event)`: Trigger an event asynchronously
 
 #### Condition Handling
-- `void setConditionValue(const std::string& name, int value)`: Update a condition value asynchronously
+- `void SetConditionValue(const std::string& name, int value)`: Update a condition value asynchronously
 
 #### State Management
-- `State getCurrentState() const`: Get the current state
-- `void setInitialState(const State& state)`: Set the initial state
-- `void addState(const State& name, const State& parent = "")`: Add a new state
-- `void addTransition(const TransitionRule& rule)`: Add a state transition rule
-- `void loadFromJSON(const std::string& filepath)`: Load state machine configuration from a JSON file
+- `State GetCurrentState() const`: Get the current state
+- `void SetInitialState(const State& state)`: Set the initial state
+- `void AddState(const State& name, const State& parent = "")`: Add a new state
+- `void AddTransition(const TransitionRule& rule)`: Add a state transition rule
+- `std::vector<State> GetStateHierarchy(const State& state) const`: Get a state and all its parent states (from child to parent)
+- `void GetStateHierarchy(const State& from, const State& to, std::vector<State>& exit_states, std::vector<State>& enter_states) const`: Get states to exit and enter when transitioning between two states
 
 #### State Event Handler Methods
-- `void setStateEventHandler(std::shared_ptr<StateEventHandler> handler)`: Set a complete state event handler
+- `void SetStateEventHandler(std::shared_ptr<StateEventHandler> handler)`: Set a complete state event handler
 
 ##### Function Object Callbacks
-- `void setTransitionCallback(StateEventHandler::TransitionCallback callback)`: Set state transition callback
-- `void setPreEventCallback(StateEventHandler::PreEventCallback callback)`: Set event pre-processing callback
-- `void setEnterStateCallback(StateEventHandler::EnterStateCallback callback)`: Set state entry callback
-- `void setExitStateCallback(StateEventHandler::ExitStateCallback callback)`: Set state exit callback
-- `void setPostEventCallback(StateEventHandler::PostEventCallback callback)`: Set event post-processing callback
+- `void SetTransitionCallback(StateEventHandler::TransitionCallback callback)`: Set state transition callback
+- `void SetPreEventCallback(StateEventHandler::PreEventCallback callback)`: Set event pre-processing callback
+- `void SetEnterStateCallback(StateEventHandler::EnterStateCallback callback)`: Set state entry callback
+- `void SetExitStateCallback(StateEventHandler::ExitStateCallback callback)`: Set state exit callback
+- `void SetPostEventCallback(StateEventHandler::PostEventCallback callback)`: Set event post-processing callback
 
 ##### Class Member Function Callbacks
-- `template<typename T> void setTransitionCallback(T* instance, void (T::*method)(...))`: Set class member function as state transition callback
-- `template<typename T> void setPreEventCallback(T* instance, bool (T::*method)(...))`: Set class member function as event pre-processing callback
-- `template<typename T> void setEnterStateCallback(T* instance, void (T::*method)(...))`: Set class member function as state entry callback
-- `template<typename T> void setExitStateCallback(T* instance, void (T::*method)(...))`: Set class member function as state exit callback
-- `template<typename T> void setPostEventCallback(T* instance, void (T::*method)(...))`: Set class member function as event post-processing callback
+- `template<typename T> void SetTransitionCallback(T* instance, void (T::*method)(...))`: Set class member function as state transition callback
+- `template<typename T> void SetPreEventCallback(T* instance, bool (T::*method)(...))`: Set class member function as event pre-processing callback
+- `template<typename T> void SetEnterStateCallback(T* instance, void (T::*method)(...))`: Set class member function as state entry callback
+- `template<typename T> void SetExitStateCallback(T* instance, void (T::*method)(...))`: Set class member function as state exit callback
+- `template<typename T> void SetPostEventCallback(T* instance, void (T::*method)(...))`: Set class member function as event post-processing callback
 
 #### Internal Handler Methods
-- `void onTransition(const std::vector<State>& fromStates, const Event& event, const std::vector<State>& toStates)`: Handle state transition
-- `bool onPreEvent(const State& currentState, const Event& event)`: Handle event pre-processing
-- `void onEnterState(const std::vector<State>& states)`: Handle state entry
-- `void onExitState(const std::vector<State>& states)`: Handle state exit
-- `void onPostEvent(const Event& event, bool handled)`: Handle event post-processing
+The library includes several private methods for internal processing:
+- Event processing loop for handling event queue items
+- Condition processing loop for handling condition updates
+- Timer loop for managing duration-based conditions
+- Event trigger loop for generating events based on conditions
 
 ### StateEventHandler Class
 
@@ -477,25 +496,25 @@ A more complex example that simulates a smart home system with multiple states, 
 - `using PostEventCallback`: Event post-processing callback function type
 
 #### Callback Setting Methods
-- `void setTransitionCallback(TransitionCallback callback)`: Set state transition callback
-- `void setPreEventCallback(PreEventCallback callback)`: Set event pre-processing callback
-- `void setEnterStateCallback(EnterStateCallback callback)`: Set state entry callback
-- `void setExitStateCallback(ExitStateCallback callback)`: Set state exit callback
-- `void setPostEventCallback(PostEventCallback callback)`: Set event post-processing callback
+- `void SetTransitionCallback(TransitionCallback callback)`: Set state transition callback
+- `void SetPreEventCallback(PreEventCallback callback)`: Set event pre-processing callback
+- `void SetEnterStateCallback(EnterStateCallback callback)`: Set state entry callback
+- `void SetExitStateCallback(ExitStateCallback callback)`: Set state exit callback
+- `void SetPostEventCallback(PostEventCallback callback)`: Set event post-processing callback
 
 #### Class Member Function Callbacks
-- `template<typename T> void setTransitionCallback(T* instance, void (T::*method)(...))`: Set class member function as state transition callback
-- `template<typename T> void setPreEventCallback(T* instance, bool (T::*method)(...))`: Set class member function as event pre-processing callback
-- `template<typename T> void setEnterStateCallback(T* instance, void (T::*method)(...))`: Set class member function as state entry callback
-- `template<typename T> void setExitStateCallback(T* instance, void (T::*method)(...))`: Set class member function as state exit callback
-- `template<typename T> void setPostEventCallback(T* instance, void (T::*method)(...))`: Set class member function as event post-processing callback
+- `template<typename T> void SetTransitionCallback(T* instance, void (T::*method)(...))`: Set class member function as state transition callback
+- `template<typename T> void SetPreEventCallback(T* instance, bool (T::*method)(...))`: Set class member function as event pre-processing callback
+- `template<typename T> void SetEnterStateCallback(T* instance, void (T::*method)(...))`: Set class member function as state entry callback
+- `template<typename T> void SetExitStateCallback(T* instance, void (T::*method)(...))`: Set class member function as state exit callback
+- `template<typename T> void SetPostEventCallback(T* instance, void (T::*method)(...))`: Set class member function as event post-processing callback
 
 #### Internal Handler Methods
-- `void onTransition(const std::vector<State>& fromStates, const Event& event, const std::vector<State>& toStates)`: Handle state transition
-- `bool onPreEvent(const State& currentState, const Event& event)`: Handle event pre-processing
-- `void onEnterState(const std::vector<State>& states)`: Handle state entry
-- `void onExitState(const std::vector<State>& states)`: Handle state exit
-- `void onPostEvent(const Event& event, bool handled)`: Handle event post-processing
+- `void OnTransition(const std::vector<State>& fromStates, const EventPtr& event, const std::vector<State>& toStates)`: Handle state transition
+- `bool OnPreEvent(const State& currentState, const EventPtr& event)`: Handle event pre-processing
+- `void OnEnterState(const std::vector<State>& states)`: Handle state entry
+- `void OnExitState(const std::vector<State>& states)`: Handle state exit
+- `void OnPostEvent(const EventPtr& event, bool handled)`: Handle event post-processing
 
 ### Logger Class
 
@@ -503,13 +522,13 @@ A more complex example that simulates a smart home system with multiple states, 
 - `enum class LogLevel { DEBUG, INFO, WARN, ERROR }`: Log levels from least to most severe
 
 #### Public Methods
-- `static Logger& getInstance()`: Get the singleton logger instance
-- `void setLogLevel(LogLevel level)`: Set the minimum log level to display
-- `LogLevel getLogLevel() const`: Get the current minimum log level
-- `void log(LogLevel level, const std::string& file, int line, const std::string& message)`: Log a message
-- `void setLogFile(const std::string& file)`: Set the log file
-- `void setLogFileRolling(size_t max_file_size, int max_backup_index)`: Set up log file rolling based on size and backup index
-- `void shutdown()`: Shutdown the logger and release resources
+- `static Logger& GetInstance()`: Get the singleton logger instance
+- `void SetLogLevel(LogLevel level)`: Set the minimum log level to display
+- `LogLevel GetLogLevel() const`: Get the current minimum log level
+- `void Log(LogLevel level, const std::string& file, int line, const std::string& message)`: Log a message
+- `void SetLogFile(const std::string& file)`: Set the log file
+- `void SetLogFileRolling(size_t max_file_size, int max_backup_index)`: Set up log file rolling based on size and backup index
+- `void Shutdown()`: Shutdown the logger and release resources
 
 #### Logging Macros
 - `SMF_LOGGER_INIT(level)`: Initialize the logger with a specific log level
@@ -605,12 +624,27 @@ This design ensures efficient concurrent processing while avoiding complex race 
 
 ---
 
+## Thread Synchronization
+
+The state machine uses fine-grained synchronization to maximize concurrent performance:
+
+1. **event_mutex_**: Protects access to the event queue and ensures thread-safe event handling
+2. **condition_update_mutex_**: Protects condition updates and the condition update queue
+3. **state_mutex_**: Ensures thread-safe state access and updates
+4. **timer_mutex_**: Protects the timer queue for duration-based conditions
+5. **event_trigger_mutex_**: Handles synchronization of event triggering based on conditions
+6. **condition_values_mutex_**: Protects access to condition values storage
+
+This multi-mutex approach allows different operations to proceed in parallel when possible, improving overall performance.
+
+---
+
 ## Performance Optimizations
 
 1. **Asynchronous Event and Condition Handling**: Reduce blocking by using queues and dedicated threads
 2. **Smart Condition Triggering**: Check transition rules only when conditions change
 3. **Duration Condition Optimization**: Use priority queue to efficiently manage timed conditions
-4. **Fine-grained Locking**: Separate mutexes for events, conditions, and states
+4. **Fine-grained Locking**: Separate mutexes for events, conditions, states, timers, and triggers
 5. **Condition Variable Notification**: Use condition variables instead of polling to reduce CPU usage
 6. **Automatic Event Generation**: Generate events automatically based on condition changes, reducing manual triggering
 
