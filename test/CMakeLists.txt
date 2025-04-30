@@ -16,6 +16,9 @@ add_executable(state_hierarchy_test
 # 添加条件事件测试子目录
 add_subdirectory(conditions_event)
 
+# 添加多范围条件测试子目录
+add_subdirectory(multi_range_conditions)
+
 # 设置线程库
 find_package(Threads REQUIRED)
 

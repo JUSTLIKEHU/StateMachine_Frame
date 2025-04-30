@@ -50,9 +50,9 @@ namespace smf {
 using State = std::string;
 // 条件类型
 struct Condition {
-  std::string name;           // 条件名称
-  std::pair<int, int> range;  // 条件范围 [min, max]
-  int duration{0};            // 条件持续时间(毫秒),默认0表示立即生效
+  std::string name;                                // 条件名称
+  std::vector<std::pair<int, int>> range_values;   // 条件范围数组 [[min1, max1], [min2, max2], ...]
+  int duration{0};                                 // 条件持续时间(毫秒),默认0表示立即生效
 };
 
 struct ConditionValue {

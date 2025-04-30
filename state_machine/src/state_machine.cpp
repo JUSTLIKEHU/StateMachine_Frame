@@ -329,8 +329,34 @@ void FiniteStateMachine::LoadFromJSON(const std::string& stateConfigFile,
       for (const auto& condition : eventJson["conditions"]) {
         Condition cond;
         cond.name = condition["name"];
-        cond.range = {condition["range"][0], condition["range"][1]};
         cond.duration = condition.value("duration", 0);
+
+        // 解析range值
+        if (condition.contains("range")) {
+          // 检查range类型
+          if (condition["range"].is_array()) {
+            if (condition["range"].size() == 2 && condition["range"][0].is_number() &&
+                condition["range"][1].is_number()) {
+              // 简单的一维数组格式 [min, max]
+              cond.range_values.push_back({condition["range"][0], condition["range"][1]});
+            } else {
+              // 二维数组格式 [[min1, max1], [min2, max2], ...]
+              for (const auto& range : condition["range"]) {
+                if (range.is_array() && range.size() == 2) {
+                  cond.range_values.push_back({range[0], range[1]});
+                } else {
+                  throw std::runtime_error("Invalid range format in event config: " +
+                                           eventDef.name);
+                }
+              }
+            }
+          } else {
+            throw std::runtime_error("Range must be an array in event config: " + eventDef.name);
+          }
+        } else {
+          throw std::runtime_error("Missing range in condition for event: " + eventDef.name);
+        }
+
         eventDef.conditions.push_back(cond);
         all_conditions_.push_back(cond);
       }
@@ -365,8 +391,35 @@ void FiniteStateMachine::LoadFromJSON(const std::string& stateConfigFile,
       for (const auto& condition : transJson["conditions"]) {
         Condition cond;
         cond.name = condition["name"];
-        cond.range = {condition["range"][0], condition["range"][1]};
         cond.duration = condition.value("duration", 0);
+
+        // 解析range值
+        if (condition.contains("range")) {
+          // 检查range类型
+          if (condition["range"].is_array()) {
+            if (condition["range"].size() == 2 && condition["range"][0].is_number() &&
+                condition["range"][1].is_number()) {
+              // 简单的一维数组格式 [min, max]
+              cond.range_values.push_back({condition["range"][0], condition["range"][1]});
+            } else {
+              // 二维数组格式 [[min1, max1], [min2, max2], ...]
+              for (const auto& range : condition["range"]) {
+                if (range.is_array() && range.size() == 2) {
+                  cond.range_values.push_back({range[0], range[1]});
+                } else {
+                  throw std::runtime_error("Invalid range format in transition config for: " +
+                                           rule.from);
+                }
+              }
+            }
+          } else {
+            throw std::runtime_error("Range must be an array in transition config for: " +
+                                     rule.from);
+          }
+        } else {
+          throw std::runtime_error("Missing range in condition for transition from: " + rule.from);
+        }
+
         rule.conditions.push_back(cond);
         all_conditions_.push_back(cond);
       }
@@ -551,10 +604,25 @@ void FiniteStateMachine::PrintSatisfiedConditions(const std::vector<Condition>& 
         throw std::invalid_argument("Condition value not set: " + cond.name);
       }
       int value = condition_values_copy[cond.name].value;
-      if (value >= cond.range.first && value <= cond.range.second) {
-        SMF_LOGD("  - " + cond.name + " = " + std::to_string(value) + " (range: [" +
-                 std::to_string(cond.range.first) + ", " + std::to_string(cond.range.second) +
-                 "],duration: " + std::to_string(cond.duration) + ")");
+
+      // 检查值是否在任何范围内
+      bool valueInRange = false;
+      std::string rangeStr = "[";
+      for (size_t i = 0; i < cond.range_values.size(); ++i) {
+        const auto& range = cond.range_values[i];
+        if (value >= range.first && value <= range.second) {
+          valueInRange = true;
+        }
+        rangeStr += "[" + std::to_string(range.first) + ", " + std::to_string(range.second) + "]";
+        if (i < cond.range_values.size() - 1) {
+          rangeStr += ", ";
+        }
+      }
+      rangeStr += "]";
+
+      if (valueInRange) {
+        SMF_LOGD("  - " + cond.name + " = " + std::to_string(value) + " (range: " + rangeStr +
+                 ", duration: " + std::to_string(cond.duration) + ")");
       }
     }
   }
@@ -585,7 +653,15 @@ bool FiniteStateMachine::CheckConditions(const std::vector<Condition>& condition
     }
 
     int value = condition_values_copy[cond.name].value;
-    bool valueInRange = (value >= cond.range.first && value <= cond.range.second);
+    bool valueInRange = false;
+
+    // 检查值是否在任何一个范围区间内
+    for (const auto& range : cond.range_values) {
+      if (value >= range.first && value <= range.second) {
+        valueInRange = true;
+        break;
+      }
+    }
 
     // 检查持续时间
     if (cond.duration > 0 && valueInRange) {
@@ -628,8 +704,16 @@ void FiniteStateMachine::ProcessConditionUpdates(
       // 检查此条件值是否配置了持续时间
       for (const auto& cond : all_conditions_) {
         if (cond.name == update.name) {
-          if (cond.duration > 0 &&
-              (update.value >= cond.range.first && update.value <= cond.range.second)) {
+          // 检查值是否在任何范围内
+          bool valueInRange = false;
+          for (const auto& range : cond.range_values) {
+            if (update.value >= range.first && update.value <= range.second) {
+              valueInRange = true;
+              break;
+            }
+          }
+
+          if (cond.duration > 0 && valueInRange) {
             // 如果条件配置了持续时间且当前值在范围内，添加到定时器
             std::lock_guard<std::mutex> timerLock(timer_mutex_);
             auto expiryTime = update.updateTime + std::chrono::milliseconds(cond.duration);

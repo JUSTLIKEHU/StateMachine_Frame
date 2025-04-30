@@ -9,6 +9,7 @@
 - **状态管理**：定义和管理多个状态，支持嵌套(层次化)状态。
 - **事件驱动转换**：使用事件触发状态转换。
 - **基于条件的转换**：基于条件(例如，值范围、持续时间)触发状态转换。
+- **多维范围条件**：支持简单的一维范围和多维范围数组。
 - **自定义处理器**：使用`StateEventHandler`接口实现自定义状态转换逻辑。
 - **异步处理**：使用多线程异步处理事件和条件。
 - **JSON配置**：从JSON文件加载状态机配置。
@@ -30,16 +31,32 @@
 StateMachine_Frame/
 ├── build.sh                  # 构建脚本
 ├── CMakeLists.txt            # 主CMake配置文件
+├── cmake/                    # CMake配置文件
+│   ├── FSMConfig.cmake.in    # FSM配置模板
+│   └── statemachine.pc.in    # pkg-config模板
 ├── config/                   # 配置示例
-│   └── fsm_config.json       # FSM配置示例
+│   ├── state_config.json     # 状态配置
+│   ├── event_generate_config/  # 事件生成配置
+│   │   └── power_event.json  # 电源事件定义
+│   └── trans_config/         # 转换配置
+│       ├── active_to_paused.json
+│       ├── active_to_standby.json
+│       ├── idle_to_standby.json
+│       ├── off_to_idle.json
+│       ├── on_to_off.json
+│       ├── paused_to_active.json
+│       ├── standby_to_active.json
+│       └── standby_to_idle.json
 ├── LICENSE                   # MIT许可证
 ├── README.md                 # 英文文档
 ├── README_CN.md              # 中文文档
 ├── run_test.sh               # 运行测试脚本
 ├── state_machine/            # 核心库实现
+│   ├── CMakeLists.txt        # 状态机构建配置
 │   ├── include/              # 头文件
 │   │   ├── common_define.h   # 通用定义
 │   │   ├── event.h           # 事件处理
+│   │   ├── handler_example.h # 处理器示例实现
 │   │   ├── logger.h          # 日志实现
 │   │   ├── state_event_handler.h  # 状态事件处理器
 │   │   └── state_machine.h   # 主FSM实现
@@ -51,14 +68,27 @@ StateMachine_Frame/
 │   │   ├── comprehensive_test.cpp  # 智能家居系统测试
 │   │   └── state_hierarchy_test.cpp # 层次状态测试
 │   ├── conditions_event/     # 基于条件的事件测试
+│   │   ├── CMakeLists.txt    # 测试构建配置
 │   │   ├── condition_event_test.cpp  # 条件事件测试
 │   │   └── config/           # 测试配置
-│   └── main_test/            # 基本测试
-│       └── main_test.cpp     # 基本功能测试
+│   │       ├── event_generate_config/  # 测试用事件配置
+│   │       │   ├── start_work.json     # 开始工作事件
+│   │       │   └── system_error.json   # 系统错误事件
+│   │       ├── state_config.json       # 状态配置
+│   │       └── trans_config/           # 转换配置
+│   │           ├── error2init.json     # 错误到初始化转换
+│   │           ├── init2working.json   # 初始化到工作转换
+│   │           ├── working2error.json  # 工作到错误转换
+│   │           └── working2init.json   # 工作到初始化转换
+│   ├── main_test/            # 基本测试
+│   │   └── main_test.cpp     # 基本功能测试
+│   └── multi_range_conditions/ # 多维范围条件测试
+│       ├── CMakeLists.txt      # 测试构建配置
+│       └── test_multi_range_conditions.cpp # 多范围条件测试
 └── third_party/              # 外部依赖
     └── nlohmann-json/        # JSON库
-        ├── json_fwd.hpp
-        └── json.hpp
+        ├── json_fwd.hpp      # 前向声明
+        └── json.hpp          # JSON实现
 ```
 
 ## 代码结构
@@ -73,9 +103,9 @@ StateMachine_Frame/
 2. **条件类型**
   ```cpp
   struct Condition {
-    std::string name;           // 条件名称
-    std::pair<int, int> range;  // 条件范围 [min, max]
-    int duration{0};            // 条件持续时间(毫秒),默认0表示立即生效
+    std::string name;                                // 条件名称
+    std::vector<std::pair<int, int>> range_values;   // 条件范围数组 [[min1, max1], [min2, max2], ...]
+    int duration{0};                                 // 条件持续时间(毫秒),默认0表示立即生效
   };
   ```
 
@@ -268,6 +298,24 @@ StateMachine_Frame/
 }
 ```
 
+##### 多范围条件事件示例
+```json
+{
+  "name": "MULTI_RANGE_EVENT",
+  "trigger_mode": "edge",
+  "conditions": [
+    {
+      "name": "temperature",
+      "range": [
+        [10, 20],
+        [30, 40]
+      ]
+    }
+  ],
+  "conditions_operator": "AND"
+}
+```
+
 ##### 转换规则配置 (trans_config/off_to_idle.json)
 ```json
 {
@@ -410,6 +458,15 @@ SMF_LOGE("这是一条错误信息");
 # 运行全面测试
 ./run_test.sh comp
 
+# 运行状态层次测试
+./run_test.sh hierarchy
+
+# 运行条件事件测试
+./run_test.sh condition
+
+# 运行多范围条件测试
+./run_test.sh multi
+
 # 运行所有测试
 ./run_test.sh all
 ```
@@ -428,6 +485,13 @@ SMF_LOGE("这是一条错误信息");
 - 完整的回调处理
 - 智能家居控制器实现
 - 错误处理和日志记录
+
+### 多范围条件测试
+专门用于测试多维范围条件功能的测试：
+- 支持简单的一维范围条件 (`[min, max]`)
+- 支持多维范围数组 (`[[min1, max1], [min2, max2], ...]`)
+- 测试不同范围配置的状态转换
+- 演示在非连续值范围内的条件匹配
 
 ---
 

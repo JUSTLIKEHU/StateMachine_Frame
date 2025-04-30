@@ -9,6 +9,7 @@ This is a C++ implementation of a **Finite State Machine (FSM)** that supports e
 - **State Management**: Define and manage multiple states with support for nested (hierarchical) states.
 - **Event-Driven Transitions**: Trigger state transitions using events.
 - **Condition-Based Transitions**: Trigger state transitions based on conditions (e.g., value ranges, duration).
+- **Multi-dimensional Range Conditions**: Support for both simple one-dimensional ranges and multi-dimensional range arrays.
 - **Custom Handlers**: Implement custom logic for state transitions using the `StateEventHandler` interface.
 - **Asynchronous Processing**: Handle events and conditions asynchronously using multi-threading.
 - **JSON Configuration**: Load state machine configurations from JSON files.
@@ -30,16 +31,32 @@ This is a C++ implementation of a **Finite State Machine (FSM)** that supports e
 StateMachine_Frame/
 ├── build.sh                  # Build script
 ├── CMakeLists.txt            # Main CMake configuration file
+├── cmake/                    # CMake configuration files
+│   ├── FSMConfig.cmake.in    # Template for FSM config
+│   └── statemachine.pc.in    # Template for pkg-config
 ├── config/                   # Configuration examples
-│   └── fsm_config.json       # Example FSM configuration
+│   ├── state_config.json     # State configuration
+│   ├── event_generate_config/  # Event generation configs
+│   │   └── power_event.json  # Power event definition
+│   └── trans_config/         # Transition configs
+│       ├── active_to_paused.json
+│       ├── active_to_standby.json
+│       ├── idle_to_standby.json
+│       ├── off_to_idle.json
+│       ├── on_to_off.json
+│       ├── paused_to_active.json
+│       ├── standby_to_active.json
+│       └── standby_to_idle.json
 ├── LICENSE                   # MIT License
 ├── README.md                 # English documentation
 ├── README_CN.md              # Chinese documentation
 ├── run_test.sh               # Script to run tests
 ├── state_machine/            # Core library implementation
+│   ├── CMakeLists.txt        # State machine build config
 │   ├── include/              # Header files
 │   │   ├── common_define.h   # Common definitions
 │   │   ├── event.h           # Event handling
+│   │   ├── handler_example.h # Example handler implementation
 │   │   ├── logger.h          # Logger implementation
 │   │   ├── state_event_handler.h  # State event handler
 │   │   └── state_machine.h   # Main FSM implementation
@@ -51,14 +68,27 @@ StateMachine_Frame/
 │   │   ├── comprehensive_test.cpp  # Smart home system test
 │   │   └── state_hierarchy_test.cpp # Hierarchy state test
 │   ├── conditions_event/     # Condition-based events tests
+│   │   ├── CMakeLists.txt    # Test build configuration
 │   │   ├── condition_event_test.cpp  # Condition event test
 │   │   └── config/           # Test configurations
-│   └── main_test/            # Basic tests
-│       └── main_test.cpp     # Basic functionality test
+│   │       ├── event_generate_config/  # Event configs for test
+│   │       │   ├── start_work.json     # Work start event
+│   │       │   └── system_error.json   # System error event
+│   │       ├── state_config.json       # State configuration
+│   │       └── trans_config/           # Transition configs
+│   │           ├── error2init.json     # Error to init transition
+│   │           ├── init2working.json   # Init to working transition
+│   │           ├── working2error.json  # Working to error transition
+│   │           └── working2init.json   # Working to init transition
+│   ├── main_test/            # Basic tests
+│   │   └── main_test.cpp     # Basic functionality test
+│   └── multi_range_conditions/ # Multi-dimensional range condition tests
+│       ├── CMakeLists.txt      # Test build configuration
+│       └── test_multi_range_conditions.cpp # Multi-range condition test
 └── third_party/              # External dependencies
     └── nlohmann-json/        # JSON library
-        ├── json_fwd.hpp
-        └── json.hpp
+        ├── json_fwd.hpp      # Forward declarations
+        └── json.hpp          # JSON implementation
 ```
 
 ## Code Structure
@@ -73,9 +103,9 @@ StateMachine_Frame/
 2. **Condition Type**
   ```cpp
   struct Condition {
-    std::string name;           // Condition name
-    std::pair<int, int> range;  // Valid range [min, max]
-    int duration{0};            // Duration in milliseconds, default 0 means immediate effect
+    std::string name;                                // Condition name
+    std::vector<std::pair<int, int>> range_values;   // Condition ranges [[min1, max1], [min2, max2], ...]
+    int duration{0};                                 // Duration in milliseconds, default 0 means immediate effect
   };
   ```
 
@@ -268,6 +298,24 @@ States and transitions can be defined programmatically or loaded from a JSON fil
 }
 ```
 
+##### Event with Multi-range Conditions Example
+```json
+{
+  "name": "MULTI_RANGE_EVENT",
+  "trigger_mode": "edge",
+  "conditions": [
+    {
+      "name": "temperature",
+      "range": [
+        [10, 20],
+        [30, 40]
+      ]
+    }
+  ],
+  "conditions_operator": "AND"
+}
+```
+
 ##### Transition Rule Configuration (trans_config/off_to_idle.json)
 ```json
 {
@@ -410,6 +458,15 @@ The project includes two test examples that can be run using the provided script
 # Run comprehensive test
 ./run_test.sh comp
 
+# Run state hierarchy test
+./run_test.sh hierarchy
+
+# Run condition event test
+./run_test.sh condition
+
+# Run multi-range conditions test
+./run_test.sh multi
+
 # Run all tests
 ./run_test.sh all
 ```
@@ -428,6 +485,13 @@ A more complex example that simulates a smart home system with multiple states, 
 - Complete callback handling
 - Smart home controller implementation
 - Error handling and logging
+
+### Multi-range Conditions Test
+A specialized test for the multi-dimensional range condition feature:
+- Support for simple one-dimensional range conditions (`[min, max]`)
+- Support for multi-dimensional range arrays (`[[min1, max1], [min2, max2], ...]`)
+- Testing transitions with different range configurations
+- Demonstrating condition matching in non-contiguous value ranges
 
 ---
 
