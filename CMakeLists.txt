@@ -30,7 +30,17 @@ include(GNUInstallDirs)
 
 # 添加子目录
 add_subdirectory(state_machine)
-add_subdirectory(test)
+
+# 添加测试编译选项，默认为OFF
+option(BUILD_TESTS "构建测试" OFF)
+
+# 条件添加test子目录
+if(BUILD_TESTS)
+  message(STATUS "测试构建已启用")
+  add_subdirectory(test)
+else()
+  message(STATUS "测试构建已禁用")
+endif()
 
 # 配置版本文件
 include(CMakePackageConfigHelpers)
