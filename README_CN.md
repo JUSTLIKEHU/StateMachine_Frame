@@ -14,6 +14,7 @@
 - **异步处理**：使用多线程异步处理事件和条件。
 - **JSON配置**：从JSON文件加载状态机配置。
 - **基于时间的条件**：支持需要满足特定持续时间的条件。
+- **状态超时机制**：可以为状态定义超时时间，当状态持续时间超过指定值时触发超时事件。
 - **灵活的回调机制**：支持lambda函数和类成员函数作为回调。
 - **完整的状态层次结构**：在回调中提供完整的状态层次信息。
 - **集成日志系统**：具有多种日志级别的线程安全日志系统。
@@ -82,9 +83,13 @@ StateMachine_Frame/
 │   │           └── working2init.json   # 工作到初始化转换
 │   ├── main_test/            # 基本测试
 │   │   └── main_test.cpp     # 基本功能测试
-│   └── multi_range_conditions/ # 多维范围条件测试
-│       ├── CMakeLists.txt      # 测试构建配置
-│       └── test_multi_range_conditions.cpp # 多范围条件测试
+│   ├── multi_range_conditions/ # 多维范围条件测试
+│   │   ├── CMakeLists.txt      # 测试构建配置
+│   │   └── test_multi_range_conditions.cpp # 多范围条件测试
+│   └── state_timeout/        # 状态超时测试
+│       ├── CMakeLists.txt    # 测试构建配置 
+│       ├── state_timeout_test.cpp # 状态超时测试
+│       └── config/           # 测试配置
 └── third_party/              # 外部依赖
     └── nlohmann-json/        # JSON库
         ├── json_fwd.hpp      # 前向声明
@@ -155,6 +160,7 @@ StateMachine_Frame/
     State name;                   // 状态名称
     State parent;                 // 父状态名称（可为空）
     std::vector<State> children;  // 子状态列表
+    int timeout{0};               // 状态超时时间(毫秒)，默认0表示不超时
   };
   ```
 
@@ -177,7 +183,17 @@ StateMachine_Frame/
   };
   ```
 
-10. **状态事件处理器**
+10. **状态超时信息**
+  ```cpp
+  struct StateTimeoutInfo {
+    State state;                                      // 状态名称
+    int timeout;                                      // 超时时间（毫秒）
+    std::chrono::steady_clock::time_point enterTime;  // 进入状态的时间
+    std::chrono::steady_clock::time_point expiryTime; // 超时将发生的时间
+  };
+  ```
+
+11. **状态事件处理器**
   ```cpp
   class StateEventHandler {
   public:
@@ -228,7 +244,7 @@ StateMachine_Frame/
   - 接收完整的状态层次结构而非单个状态
   - 能够在知道整个状态上下文的情况下处理转换
 
-11. **有限状态机类**
+12. **有限状态机类**
   - 管理状态机的核心类：
     - 初始化：从JSON文件或分离的配置文件加载配置
     - 事件处理：使用专用互斥锁异步处理事件
@@ -238,7 +254,7 @@ StateMachine_Frame/
     - 定时器管理：使用定时器互斥锁处理基于时间的（持续）条件
     - 事件触发：使用专用互斥锁处理事件触发
 
-12. **日志记录器类**
+13. **日志记录器类**
   ```cpp
   class Logger {
   public:
@@ -277,7 +293,8 @@ StateMachine_Frame/
     {"name": "IDLE", "parent": "ON"},
     {"name": "STAND_BY", "parent": "ON"},
     {"name": "ACTIVE", "parent": "ON"},
-    {"name": "PAUSED", "parent": "ON"}
+    {"name": "PAUSED", "parent": "ON"},
+    {"name": "WAITING", "parent": "ON", "timeout": 5000}
   ],
   "initial_state": "OFF"
 }
@@ -467,6 +484,9 @@ SMF_LOGE("这是一条错误信息");
 # 运行多范围条件测试
 ./run_test.sh multi
 
+# 运行状态超时测试
+./run_test.sh timeout
+
 # 运行所有测试
 ./run_test.sh all
 ```
@@ -493,6 +513,11 @@ SMF_LOGE("这是一条错误信息");
 - 测试不同范围配置的状态转换
 - 演示在非连续值范围内的条件匹配
 
+### 状态超时测试
+专门用于测试状态超时功能的测试：
+- 测试状态超时机制
+- 验证状态超时后的处理逻辑
+
 ---
 
 ## API参考
@@ -501,6 +526,7 @@ SMF_LOGE("这是一条错误信息");
 
 #### 静态常量
 - `static constexpr const char* INTERNAL_EVENT`：内部事件常量，用于条件触发的自动转换
+- `static constexpr const char* STATE_TIMEOUT_EVENT`：内部事件常量，用于状态超时事件
 
 #### 构造/析构
 - `FiniteStateMachine()`：构造函数，初始化状态机
@@ -671,11 +697,12 @@ graph TD
 
 ## 有限状态机线程模型
 
-状态机采用四线程模型进行异步处理：
+状态机采用五线程模型进行异步处理：
 1. **事件处理线程**：专门处理事件队列中的事件
 2. **事件触发线程**：专门处理条件变化导致的事件生成
 3. **条件处理线程**：专门处理条件更新队列
 4. **定时器线程**：专门处理需要定时触发的条件
+5. **状态超时线程**：专门处理状态超时事件
 
 这种设计确保了高效的并发处理，同时避免了复杂的竞态条件。
 
@@ -691,6 +718,7 @@ graph TD
 4. **timer_mutex_**：保护用于基于持续时间的条件的定时器队列
 5. **event_trigger_mutex_**：处理基于条件的事件触发同步
 6. **condition_values_mutex_**：保护条件值存储的访问
+7. **state_timeout_mutex_**：保护状态超时信息并确保线程安全的超时处理
 
 这种多互斥锁方法允许不同操作在可能的情况下并行进行，提高整体性能。
 

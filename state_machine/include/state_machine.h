@@ -4,10 +4,10 @@
  * @author xiaokui.hu
  * @date 2025-01-26
  * @details This file contains the definition of the FiniteStateMachine class, which implements a
- *          finite state machine. The state machine supports state transitions based on events and conditions,
- *          and allows for nested states. The state machine can be configured using a JSON file, and supports
- *          callbacks for state transitions, event handling, and condition updates. The state machine is
- *          thread-safe and can be used in a multi-threaded environment.
+ *          finite state machine. The state machine supports state transitions based on events and
+ *conditions, and allows for nested states. The state machine can be configured using a JSON file,
+ *and supports callbacks for state transitions, event handling, and condition updates. The state
+ *machine is thread-safe and can be used in a multi-threaded environment.
  **/
 
 /**
@@ -67,6 +67,7 @@ class FiniteStateMachine {
  public:
   // 定义内部事件常量
   static constexpr const char* INTERNAL_EVENT = "__INTERNAL_EVENT__";  // 使用更明确的名称
+  static constexpr const char* STATE_TIMEOUT_EVENT = "__STATE_TIMEOUT_EVENT__";  // 状态超时事件常量
 
   FiniteStateMachine() : running_(false), initialized_(false) {}
   ~FiniteStateMachine() {
@@ -78,8 +79,7 @@ class FiniteStateMachine {
   bool Init(const std::string& configFile);
 
   // 新增: 优化的初始化接口，允许分别指定各配置文件路径
-  bool Init(const std::string& stateConfigFile,
-            const std::string& eventGenerateConfigDir,
+  bool Init(const std::string& stateConfigFile, const std::string& eventGenerateConfigDir,
             const std::string& transConfigDir);
 
   // 启动状态机
@@ -96,8 +96,9 @@ class FiniteStateMachine {
 
   // 设置状态转移回调 - 类成员函数版本
   template <typename T>
-  void SetTransitionCallback(T* instance, void (T::*method)(const std::vector<State>&, const EventPtr&,
-                                                            const std::vector<State>&)) {
+  void SetTransitionCallback(T* instance,
+                             void (T::*method)(const std::vector<State>&, const EventPtr&,
+                                               const std::vector<State>&)) {
     if (running_) {
       SMF_LOGE("Cannot set transition callback while running.");
       return;
@@ -200,8 +201,7 @@ class FiniteStateMachine {
   void LoadFromJSON(const std::string& configPath);
 
   // 新增: 从分离的JSON文件加载状态机配置
-  void LoadFromJSON(const std::string& stateConfigFile,
-                    const std::string& eventGenerateConfigDir,
+  void LoadFromJSON(const std::string& stateConfigFile, const std::string& eventGenerateConfigDir,
                     const std::string& transConfigDir);
 
   // 事件处理循环 - 专注于处理事件队列
@@ -236,6 +236,9 @@ class FiniteStateMachine {
   // 事件触发循环
   void EventTriggerLoop();
 
+  // 状态超时检查循环
+  void StateTimeoutLoop();
+
   // 存储所有状态
   std::unordered_map<State, StateInfo> states_;
 
@@ -247,6 +250,12 @@ class FiniteStateMachine {
 
   // 当前状态
   State current_state_;
+
+  // 存储状态超时信息
+  StateTimeoutInfo current_state_timeout_;
+  std::mutex state_timeout_mutex_;
+  std::condition_variable state_timeout_cv_;
+  std::thread state_timeout_thread_;
 
   // 条件值
   std::unordered_map<std::string, ConditionValue> condition_values_;

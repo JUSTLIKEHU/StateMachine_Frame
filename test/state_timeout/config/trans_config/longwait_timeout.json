@@ -1,0 +1,5 @@
+{
+    "from": "LONG_WAIT",
+    "event": "__STATE_TIMEOUT_EVENT__",
+    "to": "ERROR"
+} 

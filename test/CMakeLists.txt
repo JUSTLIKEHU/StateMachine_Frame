@@ -19,6 +19,9 @@ add_subdirectory(conditions_event)
 # 添加多范围条件测试子目录
 add_subdirectory(multi_range_conditions)
 
+# 添加状态超时测试子目录
+add_subdirectory(state_timeout)
+
 # 设置线程库
 find_package(Threads REQUIRED)
 

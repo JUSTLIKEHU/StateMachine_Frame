@@ -1,0 +1,5 @@
+{
+    "from": "WAITING",
+    "event": "__STATE_TIMEOUT_EVENT__",
+    "to": "COMPLETED"
+} 

@@ -100,6 +100,7 @@ bool FiniteStateMachine::Start() {
   event_trigger_thread_ = std::thread(&FiniteStateMachine::EventTriggerLoop, this);
   condition_thread_ = std::thread(&FiniteStateMachine::ConditionLoop, this);
   timer_thread_ = std::thread(&FiniteStateMachine::TimerLoop, this);
+  state_timeout_thread_ = std::thread(&FiniteStateMachine::StateTimeoutLoop, this);
   return true;
 }
 
@@ -122,6 +123,10 @@ void FiniteStateMachine::Stop() {
     std::lock_guard<std::mutex> lock_event_trigger(event_trigger_mutex_);
     event_trigger_cv_.notify_one();
   }
+  {
+    std::lock_guard<std::mutex> lock_state_timeout(state_timeout_mutex_);
+    state_timeout_cv_.notify_one();
+  }
 
   // 等待线程结束
   if (timer_thread_.joinable()) {
@@ -135,6 +140,9 @@ void FiniteStateMachine::Stop() {
   }
   if (event_trigger_thread_.joinable()) {
     event_trigger_thread_.join();
+  }
+  if (state_timeout_thread_.joinable()) {
+    state_timeout_thread_.join();
   }
 }
 
@@ -246,6 +254,21 @@ void FiniteStateMachine::SetInitialState(const State& state) {
     throw std::invalid_argument("Initial state does not exist");
   }
   current_state_ = state;
+
+  // 初始化状态超时
+  std::lock_guard<std::mutex> lock(state_timeout_mutex_);
+  auto it = states_.find(state);
+  if (it != states_.end() && it->second.timeout > 0) {
+    auto now = std::chrono::steady_clock::now();
+    current_state_timeout_.state = state;
+    current_state_timeout_.timeout = it->second.timeout;
+    current_state_timeout_.enterTime = now;
+    current_state_timeout_.expiryTime = now + std::chrono::milliseconds(it->second.timeout);
+  } else {
+    // 清除超时信息
+    current_state_timeout_.state.clear();
+    current_state_timeout_.timeout = 0;
+  }
 }
 
 State FiniteStateMachine::GetCurrentState() const {
@@ -300,6 +323,12 @@ void FiniteStateMachine::LoadFromJSON(const std::string& stateConfigFile,
     State name = state["name"];
     State parent = state.value("parent", "");
     AddState(name, parent);
+
+    // 读取并设置超时时间
+    if (state.contains("timeout")) {
+      int timeout = state["timeout"];
+      states_[name].timeout = timeout;
+    }
   }
 
   // 加载初始状态
@@ -561,6 +590,25 @@ void FiniteStateMachine::ProcessEvent(const EventPtr& event) {
           {
             std::lock_guard<std::mutex> lock(state_mutex_);
             current_state_ = rule.to;
+
+            // 处理状态超时设置
+            std::lock_guard<std::mutex> timeout_lock(state_timeout_mutex_);
+            auto it = states_.find(current_state_);
+            if (it != states_.end() && it->second.timeout > 0) {
+              auto now = std::chrono::steady_clock::now();
+              current_state_timeout_.state = current_state_;
+              current_state_timeout_.timeout = it->second.timeout;
+              current_state_timeout_.enterTime = now;
+              current_state_timeout_.expiryTime =
+                  now + std::chrono::milliseconds(it->second.timeout);
+              state_timeout_cv_.notify_one();
+              SMF_LOGD("Set state timeout for state " + current_state_ + " with timeout " +
+                       std::to_string(it->second.timeout) + " ms");
+            } else {
+              // 清除超时信息
+              current_state_timeout_.state.clear();
+              current_state_timeout_.timeout = 0;
+            }
           }
           // 调用状态进入处理
           if (state_event_handler_) {
@@ -880,6 +928,61 @@ void FiniteStateMachine::EventTriggerLoop() {
     }
     // 触发事件
     TriggerEvent();
+  }
+}
+
+void FiniteStateMachine::StateTimeoutLoop() {
+  while (running_) {
+    State timeoutState;
+    bool shouldTriggerTimeout = false;
+
+    {
+      std::unique_lock<std::mutex> lock(state_timeout_mutex_);
+
+      if (current_state_timeout_.state.empty() || current_state_timeout_.timeout <= 0) {
+        // 无超时设置或超时时间无效，等待通知
+        state_timeout_cv_.wait(lock, [this] {
+          return !running_ ||
+                 (!current_state_timeout_.state.empty() && current_state_timeout_.timeout > 0);
+        });
+
+        if (!running_)
+          break;
+      }
+
+      auto now = std::chrono::steady_clock::now();
+
+      if (now >= current_state_timeout_.expiryTime) {
+        // 状态已超时，准备触发事件
+        timeoutState = current_state_timeout_.state;
+        shouldTriggerTimeout = true;
+
+        // 状态不变的情况下，重复触发事件
+        current_state_timeout_.expiryTime =
+            now + std::chrono::milliseconds(current_state_timeout_.timeout);
+      } else {
+        // 未超时，等待到超时时间
+        auto waitTime = current_state_timeout_.expiryTime;
+        lock.unlock();
+
+        std::unique_lock<std::mutex> waitLock(state_timeout_mutex_);
+        state_timeout_cv_.wait_until(waitLock, waitTime, [this, waitTime] {
+          // 检查是否状态已改变或超时设置被修改
+          return !running_ || current_state_timeout_.state.empty() ||
+                 current_state_timeout_.expiryTime != waitTime;
+        });
+
+        continue;
+      }
+    }
+
+    if (shouldTriggerTimeout) {
+      SMF_LOGI("State timeout triggered for state: " + timeoutState);
+
+      // 创建超时事件并处理
+      EventPtr timeoutEvent = std::make_shared<Event>(STATE_TIMEOUT_EVENT);
+      HandleEvent(timeoutEvent);
+    }
   }
 }
 

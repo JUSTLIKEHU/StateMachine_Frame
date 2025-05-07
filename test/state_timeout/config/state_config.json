@@ -1,0 +1,26 @@
+{
+    "states": [
+        {
+            "name": "INIT"
+        },
+        {
+            "name": "WORKING"
+        },
+        {
+            "name": "WAITING",
+            "timeout": 1000
+        },
+        {
+            "name": "LONG_WAIT",
+            "timeout": 5000
+        },
+        {
+            "name": "COMPLETED"
+        },
+        {
+            "name": "ERROR",
+            "timeout": 1000
+        }
+    ],
+    "initial_state": "INIT"
+}

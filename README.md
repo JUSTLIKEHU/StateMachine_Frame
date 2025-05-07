@@ -14,6 +14,7 @@ This is a C++ implementation of a **Finite State Machine (FSM)** that supports e
 - **Asynchronous Processing**: Handle events and conditions asynchronously using multi-threading.
 - **JSON Configuration**: Load state machine configurations from JSON files.
 - **Time-Based Conditions**: Support for conditions that require a specific duration to be met.
+- **State Timeout Mechanism**: Ability to define timeout for states, triggering a timeout event when a state exceeds its specified duration.
 - **Flexible Callback Mechanism**: Support for lambda functions and class member functions as callbacks.
 - **Complete State Hierarchy**: Provide complete state hierarchy information in callbacks.
 - **Integrated Logging System**: A thread-safe logging system with multiple log levels.
@@ -82,9 +83,13 @@ StateMachine_Frame/
 │   │           └── working2init.json   # Working to init transition
 │   ├── main_test/            # Basic tests
 │   │   └── main_test.cpp     # Basic functionality test
-│   └── multi_range_conditions/ # Multi-dimensional range condition tests
-│       ├── CMakeLists.txt      # Test build configuration
-│       └── test_multi_range_conditions.cpp # Multi-range condition test
+│   ├── multi_range_conditions/ # Multi-dimensional range condition tests
+│   │   ├── CMakeLists.txt      # Test build configuration
+│   │   └── test_multi_range_conditions.cpp # Multi-range condition test
+│   └── state_timeout/        # State timeout tests
+│       ├── CMakeLists.txt    # Test build configuration 
+│       ├── state_timeout_test.cpp # State timeout test
+│       └── config/           # Test configurations
 └── third_party/              # External dependencies
     └── nlohmann-json/        # JSON library
         ├── json_fwd.hpp      # Forward declarations
@@ -155,6 +160,7 @@ StateMachine_Frame/
     State name;                   // State name
     State parent;                 // Parent state name (can be empty)
     std::vector<State> children;  // Child states list
+    int timeout{0};               // Timeout in milliseconds, default 0 means no timeout
   };
   ```
 
@@ -177,7 +183,17 @@ StateMachine_Frame/
   };
   ```
 
-10. **State Event Handler**
+10. **State Timeout Info**
+  ```cpp
+  struct StateTimeoutInfo {
+    State state;                                      // State name
+    int timeout;                                      // Timeout in milliseconds
+    std::chrono::steady_clock::time_point enterTime;  // Time when entered the state
+    std::chrono::steady_clock::time_point expiryTime; // Time when timeout will occur
+  };
+  ```
+
+11. **State Event Handler**
   ```cpp
   class StateEventHandler {
   public:
@@ -228,7 +244,7 @@ StateMachine_Frame/
   - Receives complete state hierarchies rather than single states
   - Enables handling transitions with knowledge of the entire state context
 
-11. **Finite State Machine Class**
+12. **Finite State Machine Class**
   - Core class for managing the state machine:
     - Initialization: Load configuration from a JSON file or separate configuration files
     - Event Handling: Process events asynchronously with dedicated mutex
@@ -238,7 +254,7 @@ StateMachine_Frame/
     - Timer Management: Handle time-based (duration) conditions with timer mutex protection
     - Event Triggering: Dedicated event trigger handling with separate mutex
 
-12. **Logger Class**
+13. **Logger Class**
   ```cpp
   class Logger {
   public:
@@ -277,7 +293,8 @@ States and transitions can be defined programmatically or loaded from a JSON fil
     {"name": "IDLE", "parent": "ON"},
     {"name": "STAND_BY", "parent": "ON"},
     {"name": "ACTIVE", "parent": "ON"},
-    {"name": "PAUSED", "parent": "ON"}
+    {"name": "PAUSED", "parent": "ON"},
+    {"name": "WAITING", "parent": "ON", "timeout": 5000}
   ],
   "initial_state": "OFF"
 }
@@ -467,6 +484,9 @@ The project includes two test examples that can be run using the provided script
 # Run multi-range conditions test
 ./run_test.sh multi
 
+# Run state timeout test
+./run_test.sh timeout
+
 # Run all tests
 ./run_test.sh all
 ```
@@ -493,6 +513,11 @@ A specialized test for the multi-dimensional range condition feature:
 - Testing transitions with different range configurations
 - Demonstrating condition matching in non-contiguous value ranges
 
+### State Timeout Test
+A specialized test for the state timeout feature:
+- Testing state timeout logic and its integration with the state machine
+- Demonstrating state timeout handling in different scenarios
+
 ---
 
 ## API Reference
@@ -501,6 +526,7 @@ A specialized test for the multi-dimensional range condition feature:
 
 #### Static Constants
 - `static constexpr const char* INTERNAL_EVENT`: Internal event constant for condition-triggered transitions
+- `static constexpr const char* STATE_TIMEOUT_EVENT`: Internal event constant for state timeout event
 
 #### Construction/Destruction
 - `FiniteStateMachine()`: Constructor, initializes the state machine
@@ -678,11 +704,12 @@ graph TD
 
 ## Finite State Machine Thread Model
 
-The state machine uses a four-thread model for asynchronous processing:
+The state machine uses a five-thread model for asynchronous processing:
 1. **Event Handler Thread**: Dedicated to processing events from the event queue
 2. **Event Trigger Thread**: Dedicated to generating events based on condition changes
 3. **Condition Handler Thread**: Dedicated to processing condition updates
 4. **Timer Thread**: Dedicated to handling time-based conditions
+5. **State Timeout Thread**: Dedicated to handling state timeout events
 
 This design ensures efficient concurrent processing while avoiding complex race conditions.
 
@@ -698,6 +725,7 @@ The state machine uses fine-grained synchronization to maximize concurrent perfo
 4. **timer_mutex_**: Protects the timer queue for duration-based conditions
 5. **event_trigger_mutex_**: Handles synchronization of event triggering based on conditions
 6. **condition_values_mutex_**: Protects access to condition values storage
+7. **state_timeout_mutex_**: Protects state timeout information and ensures thread-safe timeout processing
 
 This multi-mutex approach allows different operations to proceed in parallel when possible, improving overall performance.
 

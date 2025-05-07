@@ -83,6 +83,15 @@ struct StateInfo {
   State name;                   // 状态名称
   State parent;                 // 父状态名称（可为空）
   std::vector<State> children;  // 子状态列表
+  int timeout{0};               // 状态超时时间(毫秒)，默认0表示不超时
+};
+
+// 状态超时信息
+struct StateTimeoutInfo {
+  State state;
+  int timeout;
+  std::chrono::steady_clock::time_point enterTime;
+  std::chrono::steady_clock::time_point expiryTime;
 };
 
 // 在类定义之前添加条件更新事件结构体
