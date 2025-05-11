@@ -14,7 +14,7 @@
 
 #include "logger.h"
 #include "state_machine.h"
-
+#include "state_machine_factory.h"
 using namespace smf;
 using json = nlohmann::json;
 
@@ -130,60 +130,60 @@ int main() {
   createTestConfigs();
 
   // 初始化状态机
-  FiniteStateMachine fsm;
-  if (!fsm.Init("./test_config")) {
+  auto fsm = smf::StateMachineFactory::CreateStateMachine("test_multi_range_conditions");
+  if (!fsm->Init("./test_config")) {
     std::cerr << "初始化状态机失败!" << std::endl;
     return 1;
   }
 
   // 设置状态转换回调
-  fsm.SetTransitionCallback(onTransition);
+  fsm->SetTransitionCallback(onTransition);
 
   // 启动状态机
-  if (!fsm.Start()) {
+  if (!fsm->Start()) {
     std::cerr << "启动状态机失败!" << std::endl;
     return 1;
   }
 
-  std::cout << "测试开始，初始状态: " << fsm.GetCurrentState() << std::endl;
+  std::cout << "测试开始，初始状态: " << fsm->GetCurrentState() << std::endl;
 
   // 测试一维范围条件
   std::cout << "\n===== 测试一维范围条件 =====\n";
   std::cout << "设置温度为40度 (在30-50范围内)" << std::endl;
-  fsm.SetConditionValue("temperature", 40);
+  fsm->SetConditionValue("temperature", 40);
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
-  std::cout << "当前状态: " << fsm.GetCurrentState() << std::endl;
+  std::cout << "当前状态: " << fsm->GetCurrentState() << std::endl;
 
   // 测试二维范围条件
   std::cout << "\n===== 测试二维范围条件 =====\n";
 
   // 测试第一个范围区间 10-20
   std::cout << "设置multi_temperature为15度 (在[10,20]范围内)" << std::endl;
-  fsm.SetConditionValue("multi_temperature", 15);
+  fsm->SetConditionValue("multi_temperature", 15);
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
-  std::cout << "当前状态: " << fsm.GetCurrentState() << std::endl;
+  std::cout << "当前状态: " << fsm->GetCurrentState() << std::endl;
 
   // 测试范围之外的值
   std::cout << "\n设置multi_temperature为25度 (不在任何配置范围内)" << std::endl;
-  fsm.SetConditionValue("multi_temperature", 25);
+  fsm->SetConditionValue("multi_temperature", 25);
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
-  std::cout << "当前状态: " << fsm.GetCurrentState() << std::endl;
+  std::cout << "当前状态: " << fsm->GetCurrentState() << std::endl;
 
   // 测试第二个范围区间 30-40
   std::cout << "\n设置multi_temperature为35度 (在[30,40]范围内)" << std::endl;
-  fsm.SetConditionValue("multi_temperature", 35);
+  fsm->SetConditionValue("multi_temperature", 35);
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
-  std::cout << "当前状态: " << fsm.GetCurrentState() << std::endl;
+  std::cout << "当前状态: " << fsm->GetCurrentState() << std::endl;
 
   // 重置回Idle状态
   std::cout << "\n===== 测试重置 =====\n";
   std::cout << "设置reset为1，触发回到Idle状态" << std::endl;
-  fsm.SetConditionValue("reset", 1);
+  fsm->SetConditionValue("reset", 1);
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
-  std::cout << "当前状态: " << fsm.GetCurrentState() << std::endl;
+  std::cout << "当前状态: " << fsm->GetCurrentState() << std::endl;
 
   // 停止状态机
-  fsm.Stop();
+  fsm->Stop();
   std::cout << "\n测试完成!" << std::endl;
 
   return 0;

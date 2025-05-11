@@ -10,14 +10,12 @@ set(FSM_VERSION "${FSM_VERSION_MAJOR}.${FSM_VERSION_MINOR}.${FSM_VERSION_PATCH}"
 set(FSM_LIB_NAME statemachine)
 
 # 源文件
-set(FSM_SOURCES 
-    src/state_machine.cpp
-)
+file(GLOB FSM_SOURCES "src/*.cpp")
 
 # 共享的编译选项
 add_compile_options(-Wall -Wextra -fPIC)
-
 # 静态库目标
+
 add_library(${FSM_LIB_NAME}_static STATIC ${FSM_SOURCES})
 set_target_properties(${FSM_LIB_NAME}_static PROPERTIES 
     OUTPUT_NAME ${FSM_LIB_NAME}

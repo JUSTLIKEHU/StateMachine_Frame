@@ -63,13 +63,18 @@ namespace smf {
 using json = nlohmann::json;
 
 // 有限状态机类
-class FiniteStateMachine {
+class FiniteStateMachine final : public std::enable_shared_from_this<FiniteStateMachine> {
+  friend class StateMachineFactory;
+
  public:
   // 定义内部事件常量
   static constexpr const char* INTERNAL_EVENT = "__INTERNAL_EVENT__";  // 使用更明确的名称
   static constexpr const char* STATE_TIMEOUT_EVENT = "__STATE_TIMEOUT_EVENT__";  // 状态超时事件常量
 
-  FiniteStateMachine() : running_(false), initialized_(false) {}
+  FiniteStateMachine(const FiniteStateMachine&) = delete;
+  FiniteStateMachine& operator=(const FiniteStateMachine&) = delete;
+  FiniteStateMachine(FiniteStateMachine&&) = delete;
+  FiniteStateMachine& operator=(FiniteStateMachine&&) = delete;
   ~FiniteStateMachine() {
     // 合并了停止定时器和状态机的逻辑
     Stop();
@@ -197,6 +202,7 @@ class FiniteStateMachine {
                          std::vector<State>& enter_states) const;
 
  private:
+  FiniteStateMachine(const std::string& name) : name_(name), running_(false), initialized_(false) {}
   // 从 JSON 文件加载状态机配置
   void LoadFromJSON(const std::string& configPath);
 
@@ -238,6 +244,9 @@ class FiniteStateMachine {
 
   // 状态超时检查循环
   void StateTimeoutLoop();
+
+ private:
+  std::string name_;
 
   // 存储所有状态
   std::unordered_map<State, StateInfo> states_;
@@ -291,5 +300,7 @@ class FiniteStateMachine {
   // 在类的成员变量部分添加事件定义存储
   std::vector<EventDefinition> event_definitions_;
 };
+
+using FiniteStateMachinePtr = std::shared_ptr<FiniteStateMachine>;
 
 }  // namespace smf

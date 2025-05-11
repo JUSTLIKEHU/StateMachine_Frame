@@ -13,7 +13,7 @@
 
 #include "logger.h"
 #include "state_machine.h"
-
+#include "state_machine_factory.h"
 // 打印状态层次结构
 void printStateHierarchy(const std::vector<smf::State>& hierarchy, const std::string& title) {
     std::cout << title << ":" << std::endl;
@@ -153,19 +153,19 @@ int main() {
     
     try {
         // 创建状态机
-        smf::FiniteStateMachine fsm;
+        auto fsm = smf::StateMachineFactory::CreateStateMachine("state_hierarchy_test");
         
         // 设置状态机
-        setupStateMachine(fsm);
+        setupStateMachine(*fsm);
         
         // 测试单个状态的层次结构
-        testSingleStateHierarchy(fsm);
+        testSingleStateHierarchy(*fsm);
         
         // 测试状态转换的层次结构
-        testStateTransitionHierarchy(fsm);
+        testStateTransitionHierarchy(*fsm);
         
         // 测试状态转换顺序
-        testStateTransitionOrder(fsm);
+        testStateTransitionOrder(*fsm);
         
         std::cout << "GetStateHierarchy接口测试完成!" << std::endl;
         

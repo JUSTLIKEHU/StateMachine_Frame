@@ -7,6 +7,27 @@ RED='\033[0;31m'
 YELLOW='\033[0;33m'
 NC='\033[0m' # 无颜色
 
+# 检查必要的命令是否存在
+check_command() {
+    if ! command -v $1 &> /dev/null; then
+        echo -e "${RED}错误: 未找到 $1 命令${NC}"
+        echo -e "${YELLOW}请安装 $1 后再运行此脚本${NC}"
+        exit 1
+    fi
+}
+
+# 检查依赖
+check_command cmake
+check_command make
+
+# 获取CPU核心数
+if command -v nproc &> /dev/null; then
+    CPU_CORES=$(nproc)
+else
+    CPU_CORES=4  # 默认值
+    echo -e "${YELLOW}警告: 未找到 nproc 命令，使用默认值 4 个核心${NC}"
+fi
+
 # 初始化变量
 BUILD_TESTS=OFF
 
@@ -26,16 +47,28 @@ if [ ! -d "$BUILD_DIR" ]; then
   mkdir -p "$BUILD_DIR"
 fi
 
+# 确保脚本有执行权限
+chmod +x "$0"
+
 # 进入build目录
-cd "$BUILD_DIR" || exit 1
+cd "$BUILD_DIR" || {
+    echo -e "${RED}错误: 无法进入 build 目录${NC}"
+    exit 1
+}
 
 # 运行CMake
 echo -e "${BLUE}配置工程...${NC}"
-cmake .. -DBUILD_TESTS=${BUILD_TESTS}
+cmake .. -DBUILD_TESTS=${BUILD_TESTS} || {
+    echo -e "${RED}错误: CMake 配置失败${NC}"
+    exit 1
+}
 
 # 编译项目
 echo -e "${BLUE}编译项目...${NC}"
-make -j$(nproc)
+make -j${CPU_CORES} || {
+    echo -e "${RED}错误: 编译失败${NC}"
+    exit 1
+}
 
 # 检查编译是否成功
 if [ $? -eq 0 ]; then

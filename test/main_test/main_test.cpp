@@ -6,19 +6,19 @@
 #include "event.h"
 #include "handler_example.h"
 #include "logger.h"  // 添加日志头文件包含
-
+#include "state_machine_factory.h"
 // 演示如何直接使用类成员函数作为回调
 void testMemberFunctionCallbacks() {
-  smf::FiniteStateMachine fsm;
+  auto fsm = smf::StateMachineFactory::CreateStateMachine("main_test");
 
   auto controller = new smf::LightController();  // 注意：这里只是演示，实际应用中应当使用智能指针
 
   // 方式1：直接使用setXXXCallback接口
-  fsm.SetTransitionCallback(controller, &smf::LightController::HandleTransition);
-  fsm.SetPreEventCallback(controller, &smf::LightController::ValidateEvent);
-  fsm.SetEnterStateCallback(controller, &smf::LightController::OnEnter);
-  fsm.SetExitStateCallback(controller, &smf::LightController::OnExit);
-  fsm.SetPostEventCallback(controller, &smf::LightController::AfterEvent);
+  fsm->SetTransitionCallback(controller, &smf::LightController::HandleTransition);
+  fsm->SetPreEventCallback(controller, &smf::LightController::ValidateEvent);
+  fsm->SetEnterStateCallback(controller, &smf::LightController::OnEnter);
+  fsm->SetExitStateCallback(controller, &smf::LightController::OnExit);
+  fsm->SetPostEventCallback(controller, &smf::LightController::AfterEvent);
 
   // 或者方式2：先创建处理器，然后设置
   /*
@@ -30,15 +30,15 @@ void testMemberFunctionCallbacks() {
   */
 
   // 初始化和运行
-  fsm.Init("../../config/fsm_config.json");
-  fsm.Start();
+  fsm->Init("../../config/fsm_config.json");
+  fsm->Start();
 
   // 触发一些事件和条件
-  fsm.HandleEvent(std::make_shared<smf::Event>("TURN_ON"));
-  fsm.HandleEvent(std::make_shared<smf::Event>("ADJUST_BRIGHTNESS"));  // 这应该会被validateEvent方法处理
+  fsm->HandleEvent(std::make_shared<smf::Event>("TURN_ON"));
+  fsm->HandleEvent(std::make_shared<smf::Event>("ADJUST_BRIGHTNESS"));  // 这应该会被validateEvent方法处理
 
   // 停止状态机
-  fsm.Stop();
+  fsm->Stop();
 
   // 检查控制器状态
   SMF_LOGI("Light power state: " + std::string(controller->IsPowerOn() ? "ON" : "OFF"));
@@ -71,13 +71,13 @@ int main() {
   SMF_LOGGER_INIT(smf::LogLevel::DEBUG);
   SMF_LOGGER_SET_FILE("fsm_test.log");  // 设置日志文件
 
-  smf::FiniteStateMachine fsm;
+  auto fsm = smf::StateMachineFactory::CreateStateMachine("main_test");
 
   // 选择回调设置方式
 
   // 选项1: 使用Lambda函数创建的回调
   auto handler = smf::CreateLightStateHandler();
-  fsm.SetStateEventHandler(handler);
+  fsm->SetStateEventHandler(handler);
 
   // 选项2: 使用类成员函数创建的回调
   // auto handler = smf::CreateMemberFunctionHandler();
@@ -89,19 +89,19 @@ int main() {
 
   try {
     // 使用新的初始化接口，分别指定各配置文件路径
-    if (!fsm.Init("../../config/state_config.json", 
+    if (!fsm->Init("../../config/state_config.json", 
                   "../../config/event_generate_config", 
                   "../../config/trans_config")) {
       SMF_LOGE("Failed to initialize state machine");
       return 1;
     }
 
-    if (!fsm.Start()) {
+    if (!fsm->Start()) {
       SMF_LOGE("Failed to start state machine");
       return 1;
     }
 
-    SMF_LOGI("Initial state: " + fsm.GetCurrentState());
+    SMF_LOGI("Initial state: " + fsm->GetCurrentState());
 
     // Test OFF -> IDLE transition with duration
     // while (true) {
@@ -118,45 +118,45 @@ int main() {
     //   SMF_LOGE("Current state: " + fsm.GetCurrentState());
     // }
     SMF_LOGI("Setting is_powered=1...");
-    fsm.SetConditionValue("is_powered", 1);
-    SMF_LOGI("Current state: " + fsm.GetCurrentState());
+    fsm->SetConditionValue("is_powered", 1);
+    SMF_LOGI("Current state: " + fsm->GetCurrentState());
 
     // 等待1100ms (比配置的1000ms多一点)
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
-    SMF_LOGI("After waiting for duration: " + fsm.GetCurrentState());
+    SMF_LOGI("After waiting for duration: " + fsm->GetCurrentState());
 
     // Test IDLE -> STAND_BY transition
-    fsm.SetConditionValue("service_ready", 1);
-    fsm.SetConditionValue("is_connected", 1);
+    fsm->SetConditionValue("service_ready", 1);
+    fsm->SetConditionValue("is_connected", 1);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    SMF_LOGI("After setting service_ready=1 and is_connected=1: " + fsm.GetCurrentState());
+    SMF_LOGI("After setting service_ready=1 and is_connected=1: " + fsm->GetCurrentState());
 
     // Test STAND_BY -> ACTIVE transition
-    fsm.HandleEvent(std::make_shared<smf::Event>("START"));
+    fsm->HandleEvent(std::make_shared<smf::Event>("START"));
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    SMF_LOGI("After START event: " + fsm.GetCurrentState());
+    SMF_LOGI("After START event: " + fsm->GetCurrentState());
 
     // Test ACTIVE -> PAUSED transition
-    fsm.SetConditionValue("is_paused", 1);
+    fsm->SetConditionValue("is_paused", 1);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    SMF_LOGI("After setting is_paused=1: " + fsm.GetCurrentState());
+    SMF_LOGI("After setting is_paused=1: " + fsm->GetCurrentState());
 
     // Test PAUSED -> ACTIVE transition
-    fsm.SetConditionValue("is_paused", 0);
+    fsm->SetConditionValue("is_paused", 0);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    SMF_LOGI("After setting is_paused=0: " + fsm.GetCurrentState());
+    SMF_LOGI("After setting is_paused=0: " + fsm->GetCurrentState());
 
     // Test ACTIVE -> STAND_BY transition
-    fsm.HandleEvent(std::make_shared<smf::Event>("USER_STOP"));
+    fsm->HandleEvent(std::make_shared<smf::Event>("USER_STOP"));
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    SMF_LOGI("After USER_STOP event: " + fsm.GetCurrentState());
+    SMF_LOGI("After USER_STOP event: " + fsm->GetCurrentState());
 
     // // Test STAND_BY -> IDLE transition
     // fsm.SetConditionValue("service_ready", 0);
     // std::this_thread::sleep_for(std::chrono::milliseconds(100));
     // SMF_LOGI("After setting service_ready=0: " + fsm.GetCurrentState());
 
-    SMF_LOGI("Final state: " + fsm.GetCurrentState());
+    SMF_LOGI("Final state: " + fsm->GetCurrentState());
 
     while (true) {
       // Keep the main thread alive to allow the worker threads to execute
@@ -164,10 +164,10 @@ int main() {
       // In a real-world application, you should use a condition variable to wait for a signal
       // from the worker threads before proceeding with any other
       std::this_thread::sleep_for(std::chrono::seconds(1));
-      SMF_LOGI("Current state: " + fsm.GetCurrentState());
+      SMF_LOGI("Current state: " + fsm->GetCurrentState());
     }
 
-    fsm.Stop();
+    fsm->Stop();
   } catch (const std::exception& e) {
     SMF_LOGE("Error: " + std::string(e.what()));
   }

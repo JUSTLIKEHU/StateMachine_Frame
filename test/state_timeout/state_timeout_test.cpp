@@ -15,7 +15,7 @@
 
 #include "logger.h"
 #include "state_machine.h"
-
+#include "state_machine_factory.h"
 using namespace std;
 using namespace smf;
 
@@ -30,23 +30,23 @@ class StateTimeoutTester {
   void Run() {
     SMF_LOGI("====== 状态超时测试开始 ======");
 
-    FiniteStateMachine fsm;
+    auto fsm = smf::StateMachineFactory::CreateStateMachine("state_timeout_test");
 
     // 注册回调
-    fsm.SetTransitionCallback(this, &StateTimeoutTester::OnTransition);
-    fsm.SetEnterStateCallback(this, &StateTimeoutTester::OnEnterState);
-    fsm.SetExitStateCallback(this, &StateTimeoutTester::OnExitState);
-    fsm.SetPreEventCallback(this, &StateTimeoutTester::OnPreEvent);
+    fsm->SetTransitionCallback(this, &StateTimeoutTester::OnTransition);
+    fsm->SetEnterStateCallback(this, &StateTimeoutTester::OnEnterState);
+    fsm->SetExitStateCallback(this, &StateTimeoutTester::OnExitState);
+    fsm->SetPreEventCallback(this, &StateTimeoutTester::OnPreEvent);
 
     // 初始化状态机
     std::string configPath = "test/state_timeout/config";
-    if (!fsm.Init(configPath)) {
+    if (!fsm->Init(configPath)) {
       SMF_LOGE("初始化状态机失败");
       return;
     }
 
     // 启动状态机
-    if (!fsm.Start()) {
+    if (!fsm->Start()) {
       SMF_LOGE("启动状态机失败");
       return;
     }
@@ -54,39 +54,39 @@ class StateTimeoutTester {
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
     // 验证初始状态
-    std::string current = fsm.GetCurrentState();
+    std::string current = fsm->GetCurrentState();
     SMF_LOGI("当前状态: " + current);
     if (current != "INIT") {
       SMF_LOGE("初始状态错误，期望: INIT，实际: " + current);
-      fsm.Stop();
+      fsm->Stop();
       return;
     }
 
     // 触发状态转换
     SMF_LOGI("触发 START 事件...");
-    fsm.HandleEvent(std::make_shared<Event>("START"));
+    fsm->HandleEvent(std::make_shared<Event>("START"));
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
     // 验证状态
-    current = fsm.GetCurrentState();
+    current = fsm->GetCurrentState();
     SMF_LOGI("当前状态: " + current);
     if (current != "WORKING") {
       SMF_LOGE("状态错误，期望: WORKING，实际: " + current);
-      fsm.Stop();
+      fsm->Stop();
       return;
     }
 
     // 触发到等待状态
     SMF_LOGI("触发 WAIT 事件...");
-    fsm.HandleEvent(std::make_shared<Event>("WAIT"));
+    fsm->HandleEvent(std::make_shared<Event>("WAIT"));
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
     // 验证状态
-    current = fsm.GetCurrentState();
+    current = fsm->GetCurrentState();
     SMF_LOGI("当前状态: " + current);
     if (current != "WAITING") {
       SMF_LOGE("状态错误，期望: WAITING，实际: " + current);
-      fsm.Stop();
+      fsm->Stop();
       return;
     }
 
@@ -95,36 +95,36 @@ class StateTimeoutTester {
     std::this_thread::sleep_for(std::chrono::milliseconds(1200));
 
     // 验证超时后的状态
-    current = fsm.GetCurrentState();
+    current = fsm->GetCurrentState();
     SMF_LOGI("超时后的状态: " + current);
     if (current != "COMPLETED") {
       SMF_LOGE("超时后状态错误，期望: COMPLETED，实际: " + current);
-      fsm.Stop();
+      fsm->Stop();
       return;
     }
 
     // 回到工作状态进行第二次测试
     SMF_LOGI("触发回到 WORKING 状态...");
-    fsm.HandleEvent(std::make_shared<Event>("START"));
+    fsm->HandleEvent(std::make_shared<Event>("START"));
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
     // 触发到长等待状态
     SMF_LOGI("触发 LONG_WAIT 事件...");
-    fsm.HandleEvent(std::make_shared<Event>("LONG_WAIT"));
+    fsm->HandleEvent(std::make_shared<Event>("LONG_WAIT"));
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
     // 验证状态
-    current = fsm.GetCurrentState();
+    current = fsm->GetCurrentState();
     SMF_LOGI("当前状态: " + current);
     if (current != "LONG_WAIT") {
       SMF_LOGE("状态错误，期望: LONG_WAIT，实际: " + current);
-      fsm.Stop();
+      fsm->Stop();
       return;
     }
 
     SMF_LOGI("等待12500ms 再停止...");
     std::this_thread::sleep_for(std::chrono::milliseconds(12500));
-    fsm.Stop();
+    fsm->Stop();
 
     SMF_LOGI("总共发生 " + std::to_string(transition_count_) + " 次状态转换");
     SMF_LOGI("总共发生 " + std::to_string(timeout_count_) + " 次超时事件");
