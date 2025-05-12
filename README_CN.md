@@ -23,6 +23,9 @@
 - **条件自动管理**：为定义的事件自动创建同名条件，简化状态跟踪。
 - **优先级队列定时器**：使用优先级队列高效管理定时条件。
 - **细粒度线程同步**：为事件、条件、状态、定时器和事件触发使用独立的互斥锁，提高并发性能。
+- **工厂模式支持**：通过集中式工厂创建和管理多个状态机。
+- **命名状态机**：支持创建和管理多个具名状态机。
+- **单例工厂管理**：集中管理所有状态机实例。
 
 ---
 
@@ -275,6 +278,29 @@ StateMachine_Frame/
   - 提供便捷的日志级别宏定义
   - 支持文件日志和日志轮转功能
 
+### StateMachineFactory 类
+
+#### 静态方法
+- `static std::shared_ptr<FiniteStateMachine> CreateStateMachine(const std::string& name)`: 创建一个具有指定名称的新状态机
+- `static std::vector<std::string> GetAllStateMachineNames()`: 获取所有已创建状态机的名称
+- `static std::shared_ptr<FiniteStateMachine> GetStateMachine(const std::string& name)`: 通过名称获取状态机
+- `static std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> GetAllStateMachines()`: 获取所有已创建的状态机
+
+#### 使用示例
+```cpp
+// 创建新的状态机
+auto fsm = StateMachineFactory::CreateStateMachine("main_fsm");
+
+// 获取已存在的状态机
+auto existing_fsm = StateMachineFactory::GetStateMachine("main_fsm");
+
+// 获取所有状态机名称
+auto names = StateMachineFactory::GetAllStateMachineNames();
+
+// 获取所有状态机
+auto all_fsms = StateMachineFactory::GetAllStateMachines();
+```
+
 ---
 
 ## 使用方法
@@ -421,30 +447,40 @@ public:
 ### 3. 初始化并运行状态机
 ```cpp
 int main() {
-   FiniteStateMachine fsm;
+   // 使用工厂创建状态机
+   auto fsm = smf::StateMachineFactory::CreateStateMachine("main_fsm");
    
    // 设置状态事件处理器回调
-   fsm.SetTransitionCallback([](const std::vector<State>& fromStates, 
+   fsm->SetTransitionCallback([](const std::vector<State>& fromStates, 
                               const EventPtr& event,
                               const std::vector<State>& toStates) {
      // 处理状态转换
    });
    
    // 方式1：使用单一配置文件初始化
-   fsm.Init("config.json");
+   fsm->Init("config.json");
    
    // 方式2：使用分离的配置文件初始化
-   fsm.Init("state_config.json", "event_generate_config_dir", "trans_config_dir");
+   fsm->Init("state_config.json", "event_generate_config_dir", "trans_config_dir");
    
    // 启动状态机
-   fsm.Start();
+   fsm->Start();
+
+   // 通过名称获取状态机
+   auto same_fsm = smf::StateMachineFactory::GetStateMachine("main_fsm");
+
+   // 获取所有状态机名称
+   auto names = smf::StateMachineFactory::GetAllStateMachineNames();
+
+   // 获取所有状态机
+   auto all_fsms = smf::StateMachineFactory::GetAllStateMachines();
 
    // 触发事件和条件
-   fsm.HandleEvent(std::make_shared<Event>("turn_on"));
-   fsm.SetConditionValue("power", 50);
+   fsm->HandleEvent(std::make_shared<Event>("turn_on"));
+   fsm->SetConditionValue("power", 50);
 
    // 停止状态机
-   fsm.Stop();
+   fsm->Stop();
    return 0;
 }
 ```

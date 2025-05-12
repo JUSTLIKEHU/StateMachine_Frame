@@ -5,13 +5,13 @@
  **/
 
 #include <chrono>
+#include <filesystem>
 #include <functional>
 #include <iomanip>
 #include <iostream>
 #include <memory>
 #include <sstream>
 #include <thread>
-#include <filesystem>
 
 #include "event.h"
 #include "logger.h"  // 添加对日志头文件的包含
@@ -306,7 +306,7 @@ bool createTestConfig(const std::string& configDir) {
   std::filesystem::create_directories(configDir);
   std::filesystem::create_directories(configDir + "/trans_config");
   std::filesystem::create_directories(configDir + "/event_generate_config");
-  
+
   // 创建状态配置文件
   std::string stateConfigPath = configDir + "/state_config.json";
   std::ofstream stateFile(stateConfigPath);
@@ -355,11 +355,11 @@ bool createTestConfig(const std::string& configDir) {
     "initial_state": "OFF"
 })";
   stateFile.close();
-  
+
   // 创建转换规则文件
   std::string transitionsConfig[] = {
-    // OFF -> STANDBY
-    R"({
+      // OFF -> STANDBY
+      R"({
       "from": "OFF",
       "to": "STANDBY",
       "conditions": [
@@ -374,9 +374,9 @@ bool createTestConfig(const std::string& configDir) {
       ],
       "conditions_operator": "AND"
     })",
-    
-    // POWER_ON -> OFF
-    R"({
+
+      // POWER_ON -> OFF
+      R"({
       "from": "POWER_ON",
       "to": "OFF",
       "conditions": [
@@ -390,11 +390,11 @@ bool createTestConfig(const std::string& configDir) {
       ],
       "conditions_operator": "AND"
     })",
-    
-    // 其他转换规则...
-    // 此处省略，但在实际代码中应该包含所有规则
+
+      // 其他转换规则...
+      // 此处省略，但在实际代码中应该包含所有规则
   };
-  
+
   // 写入前两个转换规则作为示例
   for (int i = 0; i < 2; ++i) {
     std::string transFile = configDir + "/trans_config/trans_" + std::to_string(i) + ".json";
@@ -406,7 +406,7 @@ bool createTestConfig(const std::string& configDir) {
     tf << transitionsConfig[i];
     tf.close();
   }
-  
+
   SMF_LOGI("成功创建测试配置目录: " + configDir);
   return true;
 }
@@ -435,9 +435,8 @@ void runComprehensiveTest() {
   fsm->SetPostEventCallback(controller.get(), &SmartHomeController::onPostEvent);
 
   // 初始化并启动状态机
-  if (!fsm->Init(configDir + "/state_config.json",
-                configDir + "/event_generate_config",
-                configDir + "/trans_config")) {
+  if (!fsm->Init(configDir + "/state_config.json", configDir + "/event_generate_config",
+                 configDir + "/trans_config")) {
     SMF_LOGE("状态机初始化失败！");
     return;
   }

@@ -35,7 +35,8 @@ void testMemberFunctionCallbacks() {
 
   // 触发一些事件和条件
   fsm->HandleEvent(std::make_shared<smf::Event>("TURN_ON"));
-  fsm->HandleEvent(std::make_shared<smf::Event>("ADJUST_BRIGHTNESS"));  // 这应该会被validateEvent方法处理
+  fsm->HandleEvent(
+      std::make_shared<smf::Event>("ADJUST_BRIGHTNESS"));  // 这应该会被validateEvent方法处理
 
   // 停止状态机
   fsm->Stop();
@@ -89,9 +90,8 @@ int main() {
 
   try {
     // 使用新的初始化接口，分别指定各配置文件路径
-    if (!fsm->Init("../../config/state_config.json", 
-                  "../../config/event_generate_config", 
-                  "../../config/trans_config")) {
+    if (!fsm->Init("../../config/state_config.json", "../../config/event_generate_config",
+                   "../../config/trans_config")) {
       SMF_LOGE("Failed to initialize state machine");
       return 1;
     }

@@ -10,7 +10,7 @@ class LightController {
 
   // 转换处理
   void HandleTransition(const std::vector<State>& fromStates, const EventPtr& event,
-                      const std::vector<State>& toStates) {
+                        const std::vector<State>& toStates) {
     (void)event;  // 防止未使用警告
 
     // 获取当前状态（层次结构中的第一个）

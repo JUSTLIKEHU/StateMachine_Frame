@@ -23,6 +23,9 @@ This is a C++ implementation of a **Finite State Machine (FSM)** that supports e
 - **Automatic Condition Management**: Automatically create same-named conditions for defined events, simplifying state tracking.
 - **Priority Queue Timer**: Efficiently manage timed conditions using a priority queue.
 - **Fine-grained Thread Synchronization**: Improve concurrent performance with separate mutexes for events, conditions, states, timers, and event triggers.
+- **Factory Pattern Support**: Create and manage multiple state machines through a centralized factory.
+- **Named State Machines**: Support for creating and managing multiple named state machines.
+- **Singleton Factory Management**: Centralized management of all state machine instances.
 
 ---
 
@@ -275,6 +278,29 @@ StateMachine_Frame/
   - Provides convenient macros for different log levels
   - Supports file-based logging with rotation capabilities
 
+### StateMachineFactory Class
+
+#### Static Methods
+- `static std::shared_ptr<FiniteStateMachine> CreateStateMachine(const std::string& name)`: Create a new state machine with the specified name
+- `static std::vector<std::string> GetAllStateMachineNames()`: Get names of all created state machines
+- `static std::shared_ptr<FiniteStateMachine> GetStateMachine(const std::string& name)`: Get a state machine by its name
+- `static std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> GetAllStateMachines()`: Get all created state machines
+
+#### Usage Example
+```cpp
+// Create a new state machine
+auto fsm = StateMachineFactory::CreateStateMachine("main_fsm");
+
+// Get an existing state machine
+auto existing_fsm = StateMachineFactory::GetStateMachine("main_fsm");
+
+// Get all state machine names
+auto names = StateMachineFactory::GetAllStateMachineNames();
+
+// Get all state machines
+auto all_fsms = StateMachineFactory::GetAllStateMachines();
+```
+
 ---
 
 ## Usage
@@ -421,30 +447,40 @@ public:
 ### 3. Initialize and Run the State Machine
 ```cpp
 int main() {
-   FiniteStateMachine fsm;
+   // Create a state machine using factory
+   auto fsm = smf::StateMachineFactory::CreateStateMachine("main_fsm");
    
    // Set state event handler callbacks
-   fsm.SetTransitionCallback([](const std::vector<State>& fromStates, 
+   fsm->SetTransitionCallback([](const std::vector<State>& fromStates, 
                               const EventPtr& event,
                               const std::vector<State>& toStates) {
      // Handle state transition
    });
    
    // Option 1: Initialize with a single configuration file
-   fsm.Init("config.json"); 
+   fsm->Init("config.json"); 
    
    // Option 2: Initialize with separate configuration files
-   fsm.Init("state_config.json", "event_generate_config_dir", "trans_config_dir");
+   fsm->Init("state_config.json", "event_generate_config_dir", "trans_config_dir");
    
    // Start state machine
-   fsm.Start();
+   fsm->Start();
+
+   // Get state machine by name
+   auto same_fsm = smf::StateMachineFactory::GetStateMachine("main_fsm");
+
+   // Get all state machine names
+   auto names = smf::StateMachineFactory::GetAllStateMachineNames();
+
+   // Get all state machines
+   auto all_fsms = smf::StateMachineFactory::GetAllStateMachines();
 
    // Trigger events and conditions
-   fsm.HandleEvent(std::make_shared<Event>("turn_on"));
-   fsm.SetConditionValue("power", 50);
+   fsm->HandleEvent(std::make_shared<Event>("turn_on"));
+   fsm->SetConditionValue("power", 50);
 
    // Stop state machine
-   fsm.Stop();
+   fsm->Stop();
    return 0;
 }
 ```
@@ -626,6 +662,29 @@ The library includes several private methods for internal processing:
 - `SMF_LOGI(message)`: Log an info message
 - `SMF_LOGW(message)`: Log a warning message
 - `SMF_LOGE(message)`: Log an error message
+
+### StateMachineFactory Class
+
+#### Static Methods
+- `static std::shared_ptr<FiniteStateMachine> CreateStateMachine(const std::string& name)`: Create a new state machine with the specified name
+- `static std::vector<std::string> GetAllStateMachineNames()`: Get names of all created state machines
+- `static std::shared_ptr<FiniteStateMachine> GetStateMachine(const std::string& name)`: Get a state machine by its name
+- `static std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> GetAllStateMachines()`: Get all created state machines
+
+#### Usage Example
+```cpp
+// Create a new state machine
+auto fsm = StateMachineFactory::CreateStateMachine("main_fsm");
+
+// Get an existing state machine
+auto existing_fsm = StateMachineFactory::GetStateMachine("main_fsm");
+
+// Get all state machine names
+auto names = StateMachineFactory::GetAllStateMachineNames();
+
+// Get all state machines
+auto all_fsms = StateMachineFactory::GetAllStateMachines();
+```
 
 ---
 

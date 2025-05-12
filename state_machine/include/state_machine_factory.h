@@ -39,13 +39,12 @@ namespace smf {
 class StateMachineFactory {
  public:
   static std::shared_ptr<FiniteStateMachine> CreateStateMachine(const std::string& name);
-  
+
   static std::vector<std::string> GetAllStateMachineNames();
 
   static std::shared_ptr<FiniteStateMachine> GetStateMachine(const std::string& name);
 
   static std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> GetAllStateMachines();
-  
 
  private:
   static std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> state_machines_;

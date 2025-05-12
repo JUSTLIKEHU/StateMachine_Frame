@@ -31,10 +31,11 @@
 
 #include "state_machine_factory.h"
 #include <memory>
-
+#include "logger.h"
 namespace smf {
 
-std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> StateMachineFactory::state_machines_;
+std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>>
+    StateMachineFactory::state_machines_;
 
 std::vector<std::string> StateMachineFactory::GetAllStateMachineNames() {
   std::vector<std::string> names;
@@ -44,7 +45,12 @@ std::vector<std::string> StateMachineFactory::GetAllStateMachineNames() {
   return names;
 }
 
-std::shared_ptr<FiniteStateMachine> StateMachineFactory::CreateStateMachine(const std::string& name) {
+std::shared_ptr<FiniteStateMachine> StateMachineFactory::CreateStateMachine(
+    const std::string& name) {
+  if (state_machines_.find(name) != state_machines_.end()) {
+    SMF_LOGW("State machine with name:  " + name + " already exists");
+    return state_machines_[name];
+  }
   auto state_machine = std::shared_ptr<FiniteStateMachine>(new FiniteStateMachine(name));
   state_machines_[name] = state_machine;
   return state_machine;
@@ -58,10 +64,9 @@ std::shared_ptr<FiniteStateMachine> StateMachineFactory::GetStateMachine(const s
   return state_machines_[name];
 }
 
-std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> StateMachineFactory::GetAllStateMachines() {
+std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>>
+StateMachineFactory::GetAllStateMachines() {
   return state_machines_;
 }
-
-
 
 }  // namespace smf

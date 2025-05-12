@@ -130,8 +130,8 @@ class Event {
   }
 
  private:
-  std::string name_;                                         // 事件名称
-  std::vector<ConditionInfo> matched_conditions_;            // 保存触发事件的条件的值
+  std::string name_;                               // 事件名称
+  std::vector<ConditionInfo> matched_conditions_;  // 保存触发事件的条件的值
 
   // 友元，用于实现流输出运算符
   friend std::ostream& operator<<(std::ostream& os, const Event& event);
