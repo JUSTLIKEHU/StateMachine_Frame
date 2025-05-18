@@ -46,6 +46,11 @@
 #include <vector>
 
 namespace smf {
+
+// 定义内部事件
+inline constexpr const char* INTERNAL_EVENT = "__INTERNAL_EVENT__";
+inline constexpr const char* STATE_TIMEOUT_EVENT = "__STATE_TIMEOUT_EVENT__";
+
 // 定义状态的类型
 using State = std::string;
 // 条件类型

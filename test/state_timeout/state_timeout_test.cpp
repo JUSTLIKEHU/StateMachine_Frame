@@ -137,7 +137,7 @@ class StateTimeoutTester {
     std::lock_guard<std::mutex> lock(mutex_);
 
     // 检测超时事件
-    if (event->GetName() == smf::FiniteStateMachine::STATE_TIMEOUT_EVENT) {
+    if (event->GetName() == smf::STATE_TIMEOUT_EVENT) {
       timeout_count_++;
       SMF_LOGI("检测到超时事件！当前状态: " + state);
     }

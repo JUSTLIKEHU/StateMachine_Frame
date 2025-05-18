@@ -1,10 +1,13 @@
 /**
- * @file state_machine_factory.h
- * @brief state machine factory
+ * @file i_state_manager.h
+ * @brief Interface for state management
  * @author xiaokui.hu
- * @date 2025-05-11
- * @details state machine factory, create state machine;
- */
+ * @date 2025-05-17
+ * @details This file defines the interface for the state manager component.
+ *          The state manager is responsible for tracking the current state of the
+ *          state machine, managing state hierarchy, and handling state transitions.
+ * @version 1.0.0
+ **/
 
 /**
  * MIT License
@@ -32,22 +35,28 @@
 
 #pragma once
 
-#include "state_machine.h"
+#include <functional>
+#include <string>
+#include <vector>
+
+#include "common_define.h"
+#include "i_component.h"
+#include "i_event_handler.h"
 
 namespace smf {
 
-class StateMachineFactory {
+class IStateManager : public IComponent {
  public:
-  static std::shared_ptr<FiniteStateMachine> CreateStateMachine(const std::string& name);
-
-  static std::vector<std::string> GetAllStateMachineNames();
-
-  static std::shared_ptr<FiniteStateMachine> GetStateMachine(const std::string& name);
-
-  static std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> GetAllStateMachines();
-
- private:
-  static std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> state_machines_;
+  virtual ~IStateManager() = default;
+  virtual bool AddStateInfo(const StateInfo& state_info) = 0;
+  virtual bool SetState(const State& state) = 0;
+  virtual State GetCurrentState() const = 0;
+  virtual std::vector<State> GetStateHierarchy(const State& state) const = 0;
+  virtual void GetStateHierarchy(const State& from, const State& to,
+                                 std::vector<State>& exit_states,
+                                 std::vector<State>& enter_states) const = 0;
+  using StateTimeoutCallback = std::function<void(const State& state, int timeout)>;
+  virtual void RegisterStateTimeoutCallback(StateTimeoutCallback callback) = 0;
 };
 
 }  // namespace smf

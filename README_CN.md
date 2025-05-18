@@ -1,11 +1,17 @@
 # 有限状态机(FSM)库
 
-这是一个**有限状态机(FSM)**的C++实现，支持事件驱动和基于条件的状态转换。该库被设计为灵活、可扩展且易用，适用于物联网设备控制、游戏状态管理和工作流引擎等应用场景。
+这是一个 **有限状态机(FSM)** 的C++实现，支持事件驱动和基于条件的状态转换。该库被设计为灵活、可扩展且易用，适用于物联网设备控制、游戏状态管理和工作流引擎等应用场景。
 
 ---
 
 ## 功能特点
 
+- **组件化架构**：采用模块化设计，核心功能分离为独立组件
+  - 条件管理器：处理条件值的更新和检查
+  - 状态管理器：管理状态层次结构和转换
+  - 事件处理器：处理事件触发和回调
+  - 转换管理器：管理状态转换规则
+  - 配置加载器：处理配置文件的加载和验证
 - **状态管理**：定义和管理多个状态，支持嵌套(层次化)状态。
 - **事件驱动转换**：使用事件触发状态转换。
 - **基于条件的转换**：基于条件(例如，值范围、持续时间)触发状态转换。
@@ -63,9 +69,29 @@ StateMachine_Frame/
 │   │   ├── handler_example.h # 处理器示例实现
 │   │   ├── logger.h          # 日志实现
 │   │   ├── state_event_handler.h  # 状态事件处理器
-│   │   └── state_machine.h   # 主FSM实现
+│   │   ├── state_machine.h   # 主FSM实现
+│   │   ├── state_machine_factory.h # 状态机工厂
+│   │   └── components/       # 组件接口和实现
+│   │       ├── i_component.h          # 组件基类接口
+│   │       ├── i_condition_manager.h  # 条件管理器接口
+│   │       ├── i_state_manager.h      # 状态管理器接口
+│   │       ├── i_event_handler.h      # 事件处理器接口
+│   │       ├── i_transition_manager.h # 转换管理器接口
+│   │       ├── i_config_loader.h      # 配置加载器接口
+│   │       ├── condition_manager.h    # 条件管理器实现
+│   │       ├── state_manager.h        # 状态管理器实现
+│   │       ├── event_handler.h        # 事件处理器实现
+│   │       ├── transition_manager.h   # 转换管理器实现
+│   │       └── config_loader.h        # 配置加载器实现
 │   └── src/                  # 源文件
-│       └── state_machine.cpp # 实现文件
+│       ├── state_machine.cpp # 主实现文件
+|       ├── state_machine_factory.cpp # 状态机工厂
+│       └── components/       # 组件实现
+│           ├── condition_manager.cpp  # 条件管理器实现
+│           ├── state_manager.cpp      # 状态管理器实现
+│           ├── event_handler.cpp      # 事件处理器实现
+│           ├── transition_manager.cpp # 转换管理器实现
+│           └── config_loader.cpp      # 配置加载器实现
 ├── test/                     # 测试文件
 │   ├── CMakeLists.txt        # 测试构建配置
 │   ├── comprehensive_test/   # 全面测试
@@ -101,7 +127,103 @@ StateMachine_Frame/
 
 ## 代码结构
 
-### 核心组件
+### 核心组件接口
+
+状态机库现在采用组件化架构，核心功能分解为多个独立组件，每个组件都实现了特定的接口：
+
+1. **IComponent**：所有组件的基础接口
+```cpp
+class IComponent {
+ public:
+  virtual ~IComponent() = default;
+  virtual void Start() = 0;  // 启动组件
+  virtual void Stop() = 0;   // 停止组件
+  virtual bool IsRunning() const = 0;  // 检查组件是否运行中
+};
+```
+
+2. **IConditionManager**：条件管理器接口，负责条件值的管理和检查
+```cpp
+class IConditionManager : public IComponent {
+ public:
+  // 设置条件值
+  virtual void SetConditionValue(const std::string& name, int value) = 0;
+  // 获取条件值
+  virtual void GetConditionValue(const std::string& name, int& value) const = 0;
+  // 检查条件是否满足
+  virtual bool CheckConditions(const std::vector<Condition>& conditions, 
+                             const std::string& op,
+                             std::vector<ConditionInfo>& condition_infos) = 0;
+  // 添加条件
+  virtual void AddCondition(const Condition& condition) = 0;
+  // 注册条件变化回调
+  using ConditionChangeCallback = std::function<void(const std::string&, int, int, bool)>;
+  virtual void RegisterConditionChangeCallback(ConditionChangeCallback callback) = 0;
+};
+```
+
+3. **IStateManager**：状态管理器接口，负责状态信息的管理和维护
+```cpp
+class IStateManager : public IComponent {
+ public:
+  // 添加状态信息
+  virtual bool AddStateInfo(const StateInfo& state_info) = 0;
+  // 设置当前状态
+  virtual bool SetState(const State& state) = 0;
+  // 获取当前状态
+  virtual State GetCurrentState() const = 0;
+  // 获取状态层次结构
+  virtual std::vector<State> GetStateHierarchy(const State& state) const = 0;
+  // 获取两个状态间的转换路径（需要退出和进入的状态）
+  virtual void GetStateHierarchy(const State& from, const State& to,
+                               std::vector<State>& exit_states,
+                               std::vector<State>& enter_states) const = 0;
+  // 注册状态超时回调
+  using StateTimeoutCallback = std::function<void(const State& state, int timeout)>;
+  virtual void RegisterStateTimeoutCallback(StateTimeoutCallback callback) = 0;
+};
+```
+
+4. **IEventHandler**：事件处理器接口，负责事件的处理和分发
+```cpp
+class IEventHandler : public IComponent {
+ public:
+  // 处理事件
+  virtual void HandleEvent(const EventPtr& event) = 0;
+  // 设置状态事件处理器
+  virtual void SetStateEventHandler(std::shared_ptr<StateEventHandler> handler) = 0;
+};
+```
+
+5. **ITransitionManager**：转换管理器接口，负责管理状态转换规则
+```cpp
+class ITransitionManager : public IComponent {
+ public:
+  // 添加转换规则
+  virtual bool AddTransition(const TransitionRule& rule) = 0;
+  // 查找转换规则
+  virtual bool FindTransition(const State& current_state, 
+                            const EventPtr& event,
+                            std::vector<TransitionRule>& out_rules) = 0;
+  // 清除所有转换规则
+  virtual void Clear() = 0;
+};
+```
+
+6. **IConfigLoader**：配置加载器接口，负责加载和解析配置文件
+```cpp
+class IConfigLoader : public IComponent {
+ public:
+  // 从JSON文件加载配置
+  virtual bool LoadConfig(const std::string& config_file) = 0;
+  // 从多个配置文件加载配置
+  virtual bool LoadConfig(const std::string& state_config_file, 
+                        const std::string& event_generate_config_dir,
+                        const std::string& trans_config_dir) = 0;
+};
+```
+
+### 数据结构
 
 1. **状态和事件类型**
   - `State`：表示为`std::string`。
@@ -511,9 +633,6 @@ SMF_LOGE("这是一条错误信息");
 # 运行全面测试
 ./run_test.sh comp
 
-# 运行状态层次测试
-./run_test.sh hierarchy
-
 # 运行条件事件测试
 ./run_test.sh condition
 
@@ -558,103 +677,405 @@ SMF_LOGE("这是一条错误信息");
 
 ## API参考
 
-### FiniteStateMachine 类
+### FiniteStateMachine类
 
-#### 静态常量
-- `static constexpr const char* INTERNAL_EVENT`：内部事件常量，用于条件触发的自动转换
-- `static constexpr const char* STATE_TIMEOUT_EVENT`：内部事件常量，用于状态超时事件
+#### 构造与析构
+- 无法通过构造函数直接创建，必须使用`StateMachineFactory::CreateStateMachine`工厂方法
+- 提供了禁用复制构造/赋值和移动构造/赋值的声明
+- 析构时会自动调用`Stop()`方法停止所有组件
 
-#### 构造/析构
-- `FiniteStateMachine()`：构造函数，初始化状态机
-- `~FiniteStateMachine()`：析构函数，停止状态机并清理资源
+#### 初始化与控制方法
+```cpp
+// 从单一配置目录初始化
+bool Init(const std::string& configDir);
 
-#### 初始化和控制方法
-- `bool Init(const std::string& configFile)`：从单一JSON文件加载状态机配置
-- `bool Init(const std::string& stateConfigFile, const std::string& eventGenerateConfigDir, const std::string& transConfigDir)`：从分离的JSON文件加载状态机配置
-- `bool Start()`：启动状态机及其工作线程
-- `void Stop()`：停止状态机及其工作线程
+// 从分离的配置文件初始化
+bool Init(const std::string& stateConfigFile, 
+          const std::string& eventGenerateConfigDir,
+          const std::string& transConfigDir);
+
+// 启动状态机及其所有组件
+bool Start();
+
+// 停止状态机及其所有组件
+void Stop();
+```
 
 #### 事件处理
-- `void HandleEvent(const EventPtr& event)`：异步触发事件
+```cpp
+// 异步处理事件
+void HandleEvent(const EventPtr& event);
+```
 
-#### 条件处理
-- `void SetConditionValue(const std::string& name, int value)`：异步更新条件值
+#### 条件管理
+```cpp
+// 设置条件值
+void SetConditionValue(const std::string& name, int value);
 
-#### 状态管理
-- `State GetCurrentState() const`：获取当前状态
-- `void SetInitialState(const State& state)`：设置初始状态
-- `void AddState(const State& name, const State& parent = "")`：添加新状态
-- `void AddTransition(const TransitionRule& rule)`：添加状态转换规则
-- `std::vector<State> GetStateHierarchy(const State& state) const`：获取一个状态及其所有父状态（从子到父的顺序）
-- `void GetStateHierarchy(const State& from, const State& to, std::vector<State>& exit_states, std::vector<State>& enter_states) const`：获取从一个状态转换到另一个状态时需要退出和进入的状态
+// 获取条件值
+void GetConditionValue(const std::string& name, int& value) const;
+```
 
-#### 状态事件处理器方法
-- `void SetStateEventHandler(std::shared_ptr<StateEventHandler> handler)`：设置完整的状态事件处理器
+#### 状态获取
+```cpp
+// 获取当前状态
+State GetCurrentState() const;
+```
 
-##### 函数对象回调设置
-- `void SetTransitionCallback(StateEventHandler::TransitionCallback callback)`：设置状态转换回调
-- `void SetPreEventCallback(StateEventHandler::PreEventCallback callback)`：设置事件预处理回调
-- `void SetEnterStateCallback(StateEventHandler::EnterStateCallback callback)`：设置状态进入回调
-- `void SetExitStateCallback(StateEventHandler::ExitStateCallback callback)`：设置状态退出回调
-- `void SetPostEventCallback(StateEventHandler::PostEventCallback callback)`：设置事件回收回调
+#### 回调设置方法
+每种回调都提供了函数对象版本和类成员函数版本：
 
-##### 类成员函数回调设置
-- `template<typename T> void SetTransitionCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为状态转换回调
-- `template<typename T> void SetPreEventCallback(T* instance, bool (T::*method)(...))`：设置类成员函数作为事件预处理回调
-- `template<typename T> void SetEnterStateCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为状态进入回调
-- `template<typename T> void SetExitStateCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为状态退出回调
-- `template<typename T> void SetPostEventCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为事件回收回调
+1. **转换回调** - 状态转换时触发
+```cpp
+// 函数对象版本
+void SetTransitionCallback(StateEventHandler::TransitionCallback callback);
 
-#### 内部处理方法
-库包含几个用于内部处理的私有方法：
-- 事件处理循环，用于处理事件队列
-- 条件处理循环，用于处理条件更新
-- 定时器循环，用于管理基于持续时间的条件
-- 事件触发循环，用于根据条件生成事件
+// 类成员函数版本
+template <typename T>
+void SetTransitionCallback(T* instance, 
+                         void (T::*method)(const std::vector<State>&, 
+                                        const EventPtr&, 
+                                        const std::vector<State>&));
+```
 
-### StateEventHandler 类
+2. **事件预处理回调** - 事件处理前触发，可用于验证事件
+```cpp
+// 函数对象版本
+void SetPreEventCallback(StateEventHandler::PreEventCallback callback);
+
+// 类成员函数版本
+template <typename T>
+void SetPreEventCallback(T* instance, 
+                       bool (T::*method)(const State&, const EventPtr&));
+```
+
+3. **进入状态回调** - 进入新状态时触发
+```cpp
+// 函数对象版本
+void SetEnterStateCallback(StateEventHandler::EnterStateCallback callback);
+
+// 类成员函数版本
+template <typename T>
+void SetEnterStateCallback(T* instance, 
+                         void (T::*method)(const std::vector<State>&));
+```
+
+4. **退出状态回调** - 退出当前状态时触发
+```cpp
+// 函数对象版本
+void SetExitStateCallback(StateEventHandler::ExitStateCallback callback);
+
+// 类成员函数版本
+template <typename T>
+void SetExitStateCallback(T* instance, 
+                        void (T::*method)(const std::vector<State>&));
+```
+
+5. **事件后处理回调** - 事件处理完成后触发
+```cpp
+// 函数对象版本
+void SetPostEventCallback(StateEventHandler::PostEventCallback callback);
+
+// 类成员函数版本
+template <typename T>
+void SetPostEventCallback(T* instance, 
+                        void (T::*method)(const EventPtr&, bool));
+```
+
+#### 内部组件
+状态机内部包含以下核心组件，每个组件负责特定功能：
+
+1. **转换管理器 (TransitionManager)**
+   - 管理所有状态转换规则
+   - 提供规则查找功能
+
+2. **状态管理器 (StateManager)**
+   - 管理状态层次结构
+   - 处理状态进入/退出
+   - 管理状态超时
+
+3. **条件管理器 (ConditionManager)**
+   - 管理条件值
+   - 检查条件是否满足
+   - 处理条件变化通知
+
+4. **事件处理器 (EventHandler)**
+   - 处理事件队列
+   - 协调状态转换流程
+   - 调用相关回调
+
+5. **配置加载器 (ConfigLoader)**
+   - 加载并解析配置文件
+   - 初始化其他组件
+
+#### 使用示例
+```cpp
+// 使用工厂创建状态机实例
+auto fsm = StateMachineFactory::CreateStateMachine("my_fsm");
+
+// 设置事件处理回调
+fsm->SetTransitionCallback([](const std::vector<State>& fromStates, 
+                           const EventPtr& event, 
+                           const std::vector<State>& toStates) {
+    std::cout << "从状态 " << fromStates[0] << " 转换到状态 " << toStates[0] 
+              << " 由事件 " << event->GetName() << " 触发" << std::endl;
+});
+
+// 初始化状态机
+fsm->Init("config/");
+
+// 启动状态机
+fsm->Start();
+
+// 处理事件
+fsm->HandleEvent(std::make_shared<Event>("button_pressed"));
+
+// 更新条件值
+fsm->SetConditionValue("temperature", 25);
+
+// 获取当前状态
+std::cout << "当前状态: " << fsm->GetCurrentState() << std::endl;
+
+// 停止状态机
+fsm->Stop();
+```
+
+### StateEventHandler类
+
+状态事件处理器用于处理状态机中的各种事件和状态转换回调。
 
 #### 回调函数类型
-- `using TransitionCallback`: 状态转换回调函数类型
-- `using PreEventCallback`: 事件预处理回调函数类型
-- `using EnterStateCallback`: 状态进入回调函数类型
-- `using ExitStateCallback`: 状态退出回调函数类型
-- `using PostEventCallback`: 事件回收回调函数类型
+```cpp
+// 状态转换回调：当状态从fromStates转换到toStates，由event触发
+using TransitionCallback = std::function<void(const std::vector<State>&, const EventPtr&, const std::vector<State>&)>;
+
+// 事件预处理回调：在处理事件前调用，返回true表示允许处理该事件，false表示拒绝
+using PreEventCallback = std::function<bool(const State&, const EventPtr&)>;
+
+// 状态进入回调：当进入新状态集合时调用
+using EnterStateCallback = std::function<void(const std::vector<State>&)>;
+
+// 状态退出回调：当退出当前状态集合时调用
+using ExitStateCallback = std::function<void(const std::vector<State>&)>;
+
+// 事件后处理回调：当事件处理完成后调用，handled表示事件是否被处理
+using PostEventCallback = std::function<void(const EventPtr&, bool)>;
+```
 
 #### 设置回调方法
-- `void SetTransitionCallback(TransitionCallback callback)`：设置状态转换回调
-- `void SetPreEventCallback(PreEventCallback callback)`：设置事件预处理回调
-- `void SetEnterStateCallback(EnterStateCallback callback)`：设置状态进入回调
-- `void SetExitStateCallback(ExitStateCallback callback)`：设置状态退出回调
-- `void SetPostEventCallback(PostEventCallback callback)`：设置事件回收回调
+每种回调都提供了函数对象版本和类成员函数版本：
 
-#### 类成员函数回调设置
-- `template<typename T> void SetTransitionCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为状态转换回调
-- `template<typename T> void SetPreEventCallback(T* instance, bool (T::*method)(...))`：设置类成员函数作为事件预处理回调
-- `template<typename T> void SetEnterStateCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为状态进入回调
-- `template<typename T> void SetExitStateCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为状态退出回调
-- `template<typename T> void SetPostEventCallback(T* instance, void (T::*method)(...))`：设置类成员函数作为事件回收回调
+1. **设置状态转换回调**
+```cpp
+// 函数对象版本
+void SetTransitionCallback(TransitionCallback callback);
+
+// 类成员函数版本
+template <typename T>
+void SetTransitionCallback(T* instance, 
+                         void (T::*method)(const std::vector<State>&, 
+                                        const EventPtr&, 
+                                        const std::vector<State>&));
+```
+
+2. **设置事件预处理回调**
+```cpp
+// 函数对象版本
+void SetPreEventCallback(PreEventCallback callback);
+
+// 类成员函数版本
+template <typename T>
+void SetPreEventCallback(T* instance, 
+                       bool (T::*method)(const State&, const EventPtr&));
+```
+
+3. **设置状态进入回调**
+```cpp
+// 函数对象版本
+void SetEnterStateCallback(EnterStateCallback callback);
+
+// 类成员函数版本
+template <typename T>
+void SetEnterStateCallback(T* instance, 
+                         void (T::*method)(const std::vector<State>&));
+```
+
+4. **设置状态退出回调**
+```cpp
+// 函数对象版本
+void SetExitStateCallback(ExitStateCallback callback);
+
+// 类成员函数版本
+template <typename T>
+void SetExitStateCallback(T* instance, 
+                        void (T::*method)(const std::vector<State>&));
+```
+
+5. **设置事件后处理回调**
+```cpp
+// 函数对象版本
+void SetPostEventCallback(PostEventCallback callback);
+
+// 类成员函数版本
+template <typename T>
+void SetPostEventCallback(T* instance, 
+                        void (T::*method)(const EventPtr&, bool));
+```
 
 #### 内部处理方法
-- `void OnTransition(const std::vector<State>& fromStates, const EventPtr& event, const std::vector<State>& toStates)`：处理状态转换
-- `bool OnPreEvent(const State& currentState, const EventPtr& event)`：处理事件预处理
-- `void OnEnterState(const std::vector<State>& states)`：处理状态进入
-- `void OnExitState(const std::vector<State>& states)`：处理状态退出
-- `void OnPostEvent(const EventPtr& event, bool handled)`：处理事件回收
+```cpp
+// 处理状态转换
+void OnTransition(const std::vector<State>& fromStates, 
+                const EventPtr& event,
+                const std::vector<State>& toStates);
 
-### Logger 类
+// 处理事件预处理
+bool OnPreEvent(const State& currentState, const EventPtr& event);
 
-#### 枚举
-- `enum class LogLevel { DEBUG, INFO, WARN, ERROR }`：日志级别，从最低到最高严重程度
+// 处理状态进入
+void OnEnterState(const std::vector<State>& states);
+
+// 处理状态退出
+void OnExitState(const std::vector<State>& states);
+
+// 处理事件后处理
+void OnPostEvent(const EventPtr& event, bool handled);
+```
+
+### StateMachineFactory类
+
+状态机工厂负责创建和管理状态机实例，采用单例模式实现。
+
+#### 静态方法
+
+```cpp
+// 创建新的状态机实例
+static std::shared_ptr<FiniteStateMachine> CreateStateMachine(const std::string& name);
+
+// 获取所有已创建的状态机名称
+static std::vector<std::string> GetAllStateMachineNames();
+
+// 通过名称获取已创建的状态机实例
+static std::shared_ptr<FiniteStateMachine> GetStateMachine(const std::string& name);
+
+// 获取所有已创建的状态机实例
+static std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> GetAllStateMachines();
+```
+
+#### 使用示例
+```cpp
+// 创建状态机
+auto fsm1 = StateMachineFactory::CreateStateMachine("fsm1");
+auto fsm2 = StateMachineFactory::CreateStateMachine("fsm2");
+
+// 获取状态机名称列表
+auto names = StateMachineFactory::GetAllStateMachineNames();
+for (const auto& name : names) {
+    std::cout << "状态机名称: " << name << std::endl;
+}
+
+// 获取特定名称的状态机
+auto fsm = StateMachineFactory::GetStateMachine("fsm1");
+if (fsm) {
+    std::cout << "获取状态机成功，当前状态: " << fsm->GetCurrentState() << std::endl;
+}
+
+// 获取所有状态机
+auto allFsms = StateMachineFactory::GetAllStateMachines();
+std::cout << "总共创建了 " << allFsms.size() << " 个状态机" << std::endl;
+```
+
+### Logger类
+
+日志系统提供线程安全的日志记录功能，支持多种日志级别和日志文件轮转。
+
+#### 日志级别枚举
+```cpp
+enum class LogLevel { 
+    DEBUG,  // 调试信息，最详细的日志级别
+    INFO,   // 普通信息，默认的日志级别
+    WARN,   // 警告信息，表示可能出现的问题
+    ERROR   // 错误信息，表示已经发生的错误
+};
+```
 
 #### 公共方法
-- `static Logger& GetInstance()`：获取日志记录器单例实例
-- `void SetLogLevel(LogLevel level)`：设置要显示的最低日志级别
-- `LogLevel GetLogLevel() const`：获取当前最低日志级别
-- `void Log(LogLevel level, const std::string& file, int line, const std::string& message)`：记录日志消息
-- `void SetLogFile(const std::string& file)`：设置日志文件
-- `void SetLogFileRolling(size_t max_file_size, int max_backup_index)`：设置日志文件滚动策略
-- `void Shutdown()`：关闭日志记录器
+```cpp
+// 获取日志记录器单例实例
+static Logger& GetInstance();
+
+// 设置日志级别
+void SetLogLevel(LogLevel level);
+
+// 获取当前日志级别
+LogLevel GetLogLevel() const;
+
+// 记录日志消息
+void Log(LogLevel level, const std::string& file, int line, const std::string& message);
+
+// 设置日志文件
+void SetLogFile(const std::string& file);
+
+// 设置日志文件轮转策略
+// max_file_size: 单个日志文件的最大大小（字节）
+// max_backup_index: 保留的最大备份文件数量
+void SetLogFileRolling(size_t max_file_size, int max_backup_index);
+
+// 关闭日志记录器并释放资源
+void Shutdown();
+```
+
+#### 日志宏
+```cpp
+// 初始化日志系统
+#define SMF_LOGGER_INIT(level) /* ... */
+
+// 设置日志文件
+#define SMF_LOGGER_SET_FILE(file) /* ... */
+
+// 设置日志文件轮转
+#define SMF_LOGGER_SET_ROLLING(max_size, max_backup) /* ... */
+
+// 记录调试级别日志
+#define SMF_LOGD(message) /* ... */
+
+// 记录信息级别日志
+#define SMF_LOGI(message) /* ... */
+
+// 记录警告级别日志
+#define SMF_LOGW(message) /* ... */
+
+// 记录错误级别日志
+#define SMF_LOGE(message) /* ... */
+```
+
+#### 日志文件轮转机制
+- 当日志文件大小超过设定阈值时，自动进行轮转
+- 原日志文件重命名为 `<filename>.1`
+- 旧的备份文件依次重命名：`<filename>.1` -> `<filename>.2` 等
+- 超过最大备份数量的文件被删除
+- 轮转过程是线程安全的，不会丢失日志消息
+
+#### 使用示例
+```cpp
+// 初始化日志系统，设置日志级别为INFO
+SMF_LOGGER_INIT(smf::LogLevel::INFO);
+
+// 设置日志文件
+SMF_LOGGER_SET_FILE("app.log");
+
+// 配置日志轮转（最大10MB，保留5个备份）
+SMF_LOGGER_SET_ROLLING(10 * 1024 * 1024, 5);
+
+// 记录不同级别的日志
+SMF_LOGD("这是调试信息");  // 不会输出，因为日志级别是INFO
+SMF_LOGI("状态机初始化成功");
+SMF_LOGW("条件检查失败，使用默认值");
+SMF_LOGE("状态转换错误：无法找到目标状态");
+
+// 关闭日志系统（通常在程序退出时调用）
+smf::Logger::GetInstance().Shutdown();
+```
 
 ---
 
@@ -676,98 +1097,251 @@ SMF_LOGE("这是一条错误信息");
 
 ## 状态机处理流程
 
-以下图表说明了有限状态机的处理流程：
+### 组件间交互
+
+状态机的各个组件之间通过明确的接口进行交互，组成了一个协同工作的系统：
 
 ```mermaid
 graph TD
-  A[初始化状态机] --> B{初始化成功?}
-  B -->|是| C[启动状态机]
-  B -->|否| D[错误并退出]
+    Core[状态机核心<br>FiniteStateMachine] -- 初始化 --> CL[配置加载器<br>ConfigLoader]
+    Core -- 初始化 --> SM[状态管理器<br>StateManager]
+    Core -- 初始化 --> CM[条件管理器<br>ConditionManager]
+    Core -- 初始化 --> TM[转换管理器<br>TransitionManager]
+    Core -- 初始化 --> EH[事件处理器<br>EventHandler]
+    
+    CL -- 加载状态配置 --> SM
+    CL -- 加载条件配置 --> CM
+    CL -- 加载转换规则 --> TM
+    
+    User1[用户] -- SetConditionValue --> CM
+    User2[用户] -- HandleEvent --> EH
+    
+    CM -- 条件变化通知 --> EH
+    SM -- 状态超时通知 --> EH
+    
+    EH -- 查找转换规则 --> TM
+    EH -- 检查条件 --> CM
+    EH -- 获取/设置状态 --> SM
+    
+    EH -- 调用回调 --> SEH[状态事件处理器]
+```
+
+### 组件处理流程
+
+1. **配置加载流程**
+   - 加载状态配置：解析状态定义及其父子关系，初始状态等
+   - 加载事件生成配置：解析事件定义及其触发条件
+   - 加载转换规则配置：解析状态转换规则
+   - 验证配置的有效性和一致性
+
+2. **事件处理流程**
+```mermaid
+graph TD
+    Start[接收事件] --> PreProcess["事件预处理<br>(OnPreEvent)"]
+    PreProcess -- 预处理通过 --> FindRules["查找转换规则<br>(TransitionManager)"]
+    PreProcess -- 预处理拒绝 --> End[结束]
+    
+    FindRules -- 找到规则 --> CheckCond["检查条件<br>(ConditionManager)"]
+    FindRules -- 未找到规则 --> End
+    
+    CheckCond -- 条件满足 --> TransCallback["触发转换回调<br>(OnTransition)"]
+    CheckCond -- 条件不满足 --> End
+    
+    TransCallback --> ExitStates["退出当前状态<br>(OnExitState)"]
+    ExitStates --> UpdateState["更新当前状态<br>(StateManager)"]
+    UpdateState --> EnterStates["进入新状态<br>(OnEnterState)"]
+    EnterStates --> PostProcess["事件后处理<br>(OnPostEvent)"]
+    PostProcess --> End
+```
+
+3. **条件处理流程**
+```mermaid
+graph TD
+    Start[条件值更新] --> Update["更新条件值<br>(SetConditionValue)"]
+    Update --> Check["检查是否触发事件<br>(条件管理器)"]
+    Check -- 满足事件条件 --> Notify["通知事件处理器<br>(条件变化回调)"]
+    Check -- 不满足条件 --> End[结束]
+    
+    Notify --> CreateEvent["创建事件<br>(EventHandler)"]
+    CreateEvent --> End
+    
+    Timer["定时器到期<br>(条件持续时间)"] --> CheckDur["检查条件持续状态"]
+    CheckDur -- 条件仍满足 --> Notify
+    CheckDur -- 条件不再满足 --> End
+```
+
+4. **状态超时处理**
+```mermaid
+graph TD
+    Start["进入新状态"] --> Check["检查状态超时设置<br>(StateManager)"]
+    Check -- 有超时设置 --> SetTimer["设置超时定时器"]
+    Check -- 无超时设置 --> End[结束]
+    
+    SetTimer --> WaitTimeout["等待超时"]
+    WaitTimeout --> Timeout["超时事件触发<br>(状态超时回调)"]
+    Timeout --> CreateEvent["创建超时事件<br>(EventHandler)"]
+    CreateEvent --> End
+```
+
+以下图表说明了有限状态机的详细处理流程：
+
+```mermaid
+graph TD
+  A[应用程序] --> B[FiniteStateMachine]
+  B --> B1[初始化配置]
+  B1 --> C[组件初始化]
   
-  C --> E[创建事件处理线程]
-  C --> E1[创建事件触发线程]
-  C --> E2[创建条件处理线程]
-  C --> F[创建定时器线程]
+  C --> D[ConfigLoader加载配置]
+  D --> D1[加载状态配置]
+  D --> D2[加载事件配置]
+  D --> D3[加载转换规则]
   
-  E --> G[事件处理循环]
-  G --> H{检查事件队列}
-  H -->|有事件| I0[事件预处理]
-  I0 -->|接受| I[处理事件转换]
-  I0 -->|拒绝| I2[事件回收处理]
-  H -->|无事件| G
+  C --> E[启动组件]
+  E --> E1[启动StateManager]
+  E --> E2[启动ConditionManager]
+  E --> E3[启动EventHandler]
+  E --> E4[启动TransitionManager]
   
-  E1 --> G1[事件触发循环]
-  G1 --> H1{条件触发事件}
-  H1 -->|条件满足| I1[根据事件定义触发事件]
-  H1 -->|条件不满足| G1
+  A -- HandleEvent --> F[EventHandler]
+  A -- SetConditionValue --> G[ConditionManager]
   
-  E2 --> J1[条件处理循环]
-  J1 --> J2{检查条件队列}
-  J2 -->|有更新| K[更新条件值]
-  K --> K1{条件立即生效?}
-  K1 -->|是| K2[通知事件触发线程]
-  K1 -->|否| K3[添加到定时器队列]
-  J2 -->|无更新| J1
+  F --> F1[事件处理线程]
+  F1 --> F2{"预处理事件<br>(OnPreEvent)"}
+  F2 -- 通过 --> F3["查找转换规则<br>(TransitionManager)"]
+  F2 -- 拒绝 --> F9["后处理事件<br>(OnPostEvent)"]
   
-  F --> M[定时器循环]
-  M --> N{检查定时条件}
-  N -->|条件满足| O[通知事件触发线程]
-  N -->|条件未满足| P[等待下一个定时器滴答]
+  F3 -- 找到规则 --> F4["检查条件<br>(ConditionManager)"]
+  F3 -- 未找到规则 --> F9
   
-  I --> Q0[执行状态转换]
-  I1 --> Q0
-  Q0 --> Q1[退出旧状态]
-  Q1 --> Q[获取完整状态层次结构]
-  Q --> R[调用转换回调]
-  R --> S0[进入新状态]
-  S0 --> S[更新当前状态]
-  S --> T[输出转换信息]
-  T --> I2
+  F4 -- 条件满足 --> F5["获取状态层次<br>(StateManager)"]
+  F4 -- 条件不满足 --> F9
   
-  Z[停止状态机] --> Z1[设置running=false]
-  Z1 --> Z2[通知所有等待线程]
-  Z2 --> Z3[等待所有线程结束]
+  F5 --> F6["调用转换回调<br>(OnTransition)"]
+  F6 --> F7["退出旧状态<br>(OnExitState)"]
+  F7 --> F8["更新当前状态<br>(StateManager)"]
+  F8 --> F8a["进入新状态<br>(OnEnterState)"]
+  F8a --> F9
+  
+  G --> G1[条件处理线程]
+  G1 --> G2[更新条件值]
+  G2 --> G3{检查条件触发}
+  G3 -- 满足触发条件 --> G4[触发条件变化回调]
+  G3 -- 持续条件 --> G5[添加到定时器]
+  G4 -- 通知 --> F
+  
+  G5 --> G6[定时器线程]
+  G6 --> G7{检查定时条件}
+  G7 -- 条件满足 --> G4
+  
+  E1 --> H[状态超时线程]
+  H --> H1{检查状态超时}
+  H1 -- 超时 --> H2[触发超时回调]
+  H2 -- 通知 --> F
+  
+  A -- 停止状态机 --> I[Stop]
+  I --> I1[停止所有组件]
+  I1 --> I2[等待所有线程退出]
 ```
 
 ---
 
 ## 有限状态机线程模型
 
-状态机采用五线程模型进行异步处理：
-1. **事件处理线程**：专门处理事件队列中的事件
-2. **事件触发线程**：专门处理条件变化导致的事件生成
-3. **条件处理线程**：专门处理条件更新队列
-4. **定时器线程**：专门处理需要定时触发的条件
-5. **状态超时线程**：专门处理状态超时事件
+状态机采用组件化的多线程模型进行异步处理：
 
-这种设计确保了高效的并发处理，同时避免了复杂的竞态条件。
+1. **事件处理器线程 (EventHandler Thread)**
+   - 专门处理事件队列中的事件和事件回调
+   - 响应外部事件触发和内部条件变化通知
+   - 协调状态转换的完整流程
+
+2. **条件管理器线程 (ConditionManager Thread)**
+   - 专门处理条件值更新
+   - 检查条件是否满足事件定义的条件
+   - 管理定时条件和持续时间检查
+   - 当条件满足时，通过回调通知事件处理器
+
+3. **状态管理器超时线程 (StateManager Timeout Thread)**
+   - 专门处理状态的超时检测
+   - 当状态超时时，通过回调通知事件处理器
+
+4. **日志处理线程 (Logger Thread)**
+   - 专门处理日志消息的异步记录
+   - 管理日志文件的轮转
+   - 确保日志操作不阻塞主业务逻辑
+
+每个组件在启动时（通过`Start()`方法）创建自己的工作线程，并在停止时（通过`Stop()`方法）安全地退出线程。组件间通过明确定义的接口和回调机制进行通信，而不是直接的线程间通信，这种设计简化了并发控制，提高了系统的可靠性和可维护性。
 
 ---
 
 ## 线程同步机制
 
-状态机使用细粒度的同步机制以最大化并发性能：
+为了确保多线程环境下的数据一致性和避免竞态条件，状态机使用了细粒度的线程同步机制：
 
-1. **event_mutex_**：保护事件队列的访问并确保线程安全的事件处理
-2. **condition_update_mutex_**：保护条件更新和条件更新队列
-3. **state_mutex_**：确保线程安全的状态访问和更新
-4. **timer_mutex_**：保护用于基于持续时间的条件的定时器队列
-5. **event_trigger_mutex_**：处理基于条件的事件触发同步
-6. **condition_values_mutex_**：保护条件值存储的访问
-7. **state_timeout_mutex_**：保护状态超时信息并确保线程安全的超时处理
+1. **事件处理器 (EventHandler)**
+   - `std::mutex event_queue_mutex_`：保护事件队列的线程安全访问
+   - `std::condition_variable event_cv_`：用于事件队列的条件变量，避免忙等待
 
-这种多互斥锁方法允许不同操作在可能的情况下并行进行，提高整体性能。
+2. **条件管理器 (ConditionManager)**
+   - `std::mutex condition_values_mutex_`：保护条件值存储的访问
+   - `std::mutex condition_update_mutex_`：保护条件更新队列
+   - `std::condition_variable condition_update_cv_`：用于条件更新的条件变量
+   - `std::mutex timer_mutex_`：保护定时器队列
+   - `std::condition_variable timer_cv_`：用于定时器的条件变量
+   - `std::mutex callbacks_mutex_`：保护回调函数列表
+
+3. **状态管理器 (StateManager)**
+   - `std::mutex state_mutex_`：保护状态信息的访问
+   - `std::mutex timeout_mutex_`：保护状态超时信息
+   - `std::condition_variable timeout_cv_`：用于状态超时的条件变量
+
+4. **转换管理器 (TransitionManager)**
+   - `std::mutex rules_mutex_`：保护转换规则集合的访问
+
+5. **日志系统 (Logger)**
+   - `std::mutex log_mutex_`：保护日志操作
+   - `std::mutex queue_mutex_`：保护日志消息队列
+   - `std::condition_variable queue_cv_`：用于日志队列的条件变量
+
+这种多互斥锁和条件变量的方法允许不同组件的操作在可能的情况下并行进行，从而提高整体性能，同时保证了数据的一致性和线程安全。
 
 ---
 
 ## 性能优化
 
-1. **异步事件和条件处理**：通过队列和专用线程减少阻塞
-2. **智能条件触发**：仅在条件发生变化时检查转换规则
-3. **持续条件优化**：使用优先队列高效管理定时条件
-4. **细粒度锁定**：为事件、条件、状态、定时器和触发器使用单独的互斥锁
-5. **条件变量通知**：使用条件变量而非轮询，减少CPU使用率
-6. **事件自动生成**：根据条件变化自动生成相应事件，减少手动触发
+在组件化架构下，状态机实现了多方面的性能优化：
+
+1. **组件化与异步处理**
+   - 核心功能分离为独立组件，每个组件在专用线程中运行，减少了主线程阻塞
+   - 事件、条件更新和日志操作通过异步队列处理，提高了系统响应性
+   - 组件间通过接口和回调通信，降低了耦合度，提高了并发性能
+
+2. **细粒度锁与条件变量**
+   - 每个组件使用独立的互斥锁保护其数据，减少了锁竞争
+   - 优先使用`std::shared_mutex`等读写锁，允许多线程并发读取
+   - 使用条件变量替代轮询，降低CPU使用率，提高线程唤醒精确性
+
+3. **高效的数据结构**
+   - 使用优先级队列(`std::priority_queue`)管理定时条件，确保高效获取下一个到期定时器
+   - 状态层次结构使用树形数据结构，优化状态间关系查询
+   - 转换规则使用哈希表索引，提高规则查找效率
+
+4. **事件与条件管理优化**
+   - 条件变化通知机制避免了不必要的轮询
+   - 智能条件触发：仅在条件值变化时才重新评估相关事件定义
+   - 支持不同的事件触发模式（边缘触发vs水平触发），优化事件生成频率
+
+5. **日志系统优化**
+   - 异步日志记录：日志操作在专用线程中执行，不阻塞业务逻辑
+   - 日志消息队列：使用无锁队列或细粒度锁减少日志记录的性能影响
+   - 日志文件轮转：自动管理日志文件大小，避免单个文件过大影响I/O性能
+   - 可配置的日志级别：运行时可调整日志详细程度，平衡信息丰富度和性能开销
+
+6. **内存管理优化**
+   - 对象池：重用事件对象，减少内存分配开销
+   - 智能指针：使用`std::shared_ptr`等自动管理对象生命周期，避免内存泄漏
+   - 移动语义：利用C++17移动语义优化数据传递，减少不必要的复制
+
+这些优化措施共同确保了状态机在复杂应用场景下的高效运行，包括高并发处理、低延迟响应和资源高效利用。
 
 ---
 

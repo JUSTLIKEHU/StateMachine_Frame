@@ -10,7 +10,13 @@ set(FSM_VERSION "${FSM_VERSION_MAJOR}.${FSM_VERSION_MINOR}.${FSM_VERSION_PATCH}"
 set(FSM_LIB_NAME statemachine)
 
 # 源文件
-file(GLOB FSM_SOURCES "src/*.cpp")
+file(GLOB_RECURSE FSM_SOURCES 
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/components/*.cpp"
+)
+
+# 查找线程库
+find_package(Threads REQUIRED)
 
 # 共享的编译选项
 add_compile_options(-Wall -Wextra -fPIC)
@@ -29,6 +35,7 @@ target_include_directories(${FSM_LIB_NAME}_static
         $<INSTALL_INTERFACE:include/${FSM_LIB_NAME}>
         $<INSTALL_INTERFACE:include>
 )
+target_link_libraries(${FSM_LIB_NAME}_static PUBLIC Threads::Threads)
 
 # 动态库目标
 add_library(${FSM_LIB_NAME}_shared SHARED ${FSM_SOURCES})
@@ -45,6 +52,7 @@ target_include_directories(${FSM_LIB_NAME}_shared
         $<INSTALL_INTERFACE:include/${FSM_LIB_NAME}>
         $<INSTALL_INTERFACE:include>
 )
+target_link_libraries(${FSM_LIB_NAME}_shared PUBLIC Threads::Threads)
 
 # 为简化使用，添加一个别名目标
 add_library(FSM::${FSM_LIB_NAME} ALIAS ${FSM_LIB_NAME}_shared)

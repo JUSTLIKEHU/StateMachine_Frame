@@ -1,10 +1,13 @@
 /**
- * @file state_machine_factory.h
- * @brief state machine factory
+ * @file i_event_handler.h
+ * @brief Interface for event handling
  * @author xiaokui.hu
- * @date 2025-05-11
- * @details state machine factory, create state machine;
- */
+ * @date 2025-05-17
+ * @details This file defines the interface for the event handler component.
+ *          The event handler is responsible for processing events in the state machine
+ *          and determining if they trigger state transitions.
+ * @version 1.0.0
+ **/
 
 /**
  * MIT License
@@ -32,22 +35,18 @@
 
 #pragma once
 
-#include "state_machine.h"
+#include <memory>
+
+#include "event.h"
+#include "i_component.h"
 
 namespace smf {
 
-class StateMachineFactory {
+class IEventHandler : public IComponent {
  public:
-  static std::shared_ptr<FiniteStateMachine> CreateStateMachine(const std::string& name);
-
-  static std::vector<std::string> GetAllStateMachineNames();
-
-  static std::shared_ptr<FiniteStateMachine> GetStateMachine(const std::string& name);
-
-  static std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> GetAllStateMachines();
-
- private:
-  static std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> state_machines_;
+  virtual ~IEventHandler() = default;
+  virtual void HandleEvent(const EventPtr& event) = 0;
+  virtual bool AddEventDefinition(const EventDefinition& event_definition) = 0;
 };
 
 }  // namespace smf

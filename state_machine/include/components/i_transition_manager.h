@@ -1,10 +1,13 @@
 /**
- * @file state_machine_factory.h
- * @brief state machine factory
+ * @file i_transition_manager.h
+ * @brief Interface for transition management
  * @author xiaokui.hu
- * @date 2025-05-11
- * @details state machine factory, create state machine;
- */
+ * @date 2025-05-17
+ * @details This file defines the interface for the transition manager component.
+ *          The transition manager is responsible for storing and retrieving state
+ *          transition rules that define when and how states can change.
+ * @version 1.0.0
+ **/
 
 /**
  * MIT License
@@ -32,22 +35,21 @@
 
 #pragma once
 
-#include "state_machine.h"
+#include <memory>
+
+#include "common_define.h"
+#include "event.h"
+#include "i_component.h"
 
 namespace smf {
 
-class StateMachineFactory {
+class ITransitionManager : public IComponent {
  public:
-  static std::shared_ptr<FiniteStateMachine> CreateStateMachine(const std::string& name);
-
-  static std::vector<std::string> GetAllStateMachineNames();
-
-  static std::shared_ptr<FiniteStateMachine> GetStateMachine(const std::string& name);
-
-  static std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> GetAllStateMachines();
-
- private:
-  static std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> state_machines_;
+  virtual ~ITransitionManager() = default;
+  virtual bool AddTransition(const TransitionRule& rule) = 0;
+  virtual bool FindTransition(const State& current_state, const EventPtr& event,
+                              std::vector<TransitionRule>& out_rules) = 0;
+  virtual void Clear() = 0;
 };
 
 }  // namespace smf

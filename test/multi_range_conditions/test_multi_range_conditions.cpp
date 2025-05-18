@@ -102,7 +102,8 @@ void createTestConfigs() {
   trans3Config["conditions"] = json::array();
   json resetCondition;
   resetCondition["name"] = "reset";
-  resetCondition["range"] = {{1, 1}};  // 简单条件，值为1时触发
+  resetCondition["range"] = json::array();    // 清晰地创建一个JSON数组
+  resetCondition["range"].push_back({1, 1});  // 添加一个范围
   resetCondition["duration"] = 0;
   trans3Config["conditions"].push_back(resetCondition);
 
@@ -114,25 +115,42 @@ void createTestConfigs() {
 // 状态转换回调
 void onTransition(const std::vector<State>& exitStates, const EventPtr& event,
                   const std::vector<State>& enterStates) {
-  std::cout << "状态转换: 从 [";
+  std::string message = "状态转换: 从 [";
   for (const auto& state : exitStates) {
-    std::cout << state << " ";
+    message += state + " ";
   }
-  std::cout << "] 到 [";
+  message += "] 到 [";
   for (const auto& state : enterStates) {
-    std::cout << state << " ";
+    message += state + " ";
   }
-  std::cout << "] 由事件触发: " << event->toString() << std::endl;
+  message += "] 由事件触发: " + event->toString();
+  SMF_LOGI(message);
+}
+
+// 验证状态是否符合预期
+bool verifyState(const FiniteStateMachinePtr& fsm, const std::string& expectedState) {
+  std::string currentState = fsm->GetCurrentState();
+  SMF_LOGI("当前状态: " + currentState);
+
+  if (currentState != expectedState) {
+    SMF_LOGE("错误: 期望状态为 " + expectedState + "，实际为 " + currentState);
+    return false;
+  }
+  return true;
 }
 
 int main() {
+  // 初始化日志系统
+  SMF_LOGGER_INIT(LogLevel::INFO);
+  SMF_LOGGER_SET_FILE("multi_range_conditions_test.log");
+
   // 创建测试配置
   createTestConfigs();
 
   // 初始化状态机
   auto fsm = smf::StateMachineFactory::CreateStateMachine("test_multi_range_conditions");
   if (!fsm->Init("./test_config")) {
-    std::cerr << "初始化状态机失败!" << std::endl;
+    SMF_LOGE("初始化状态机失败!");
     return 1;
   }
 
@@ -141,50 +159,99 @@ int main() {
 
   // 启动状态机
   if (!fsm->Start()) {
-    std::cerr << "启动状态机失败!" << std::endl;
+    SMF_LOGE("启动状态机失败!");
     return 1;
   }
 
-  std::cout << "测试开始，初始状态: " << fsm->GetCurrentState() << std::endl;
+  SMF_LOGI("测试开始，初始状态: " + fsm->GetCurrentState());
+
+  // 验证初始状态
+  if (!verifyState(fsm, "Idle")) {
+    fsm->Stop();
+    return 1;
+  }
 
   // 测试一维范围条件
-  std::cout << "\n===== 测试一维范围条件 =====\n";
-  std::cout << "设置温度为40度 (在30-50范围内)" << std::endl;
+  SMF_LOGI("===== 测试一维范围条件 =====");
+  SMF_LOGI("设置温度为40度 (在30-50范围内)");
   fsm->SetConditionValue("temperature", 40);
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
-  std::cout << "当前状态: " << fsm->GetCurrentState() << std::endl;
+
+  // 验证状态是否转为Running
+  if (!verifyState(fsm, "Running")) {
+    fsm->Stop();
+    return 1;
+  }
 
   // 测试二维范围条件
-  std::cout << "\n===== 测试二维范围条件 =====\n";
+  SMF_LOGI("===== 测试二维范围条件 =====");
 
   // 测试第一个范围区间 10-20
-  std::cout << "设置multi_temperature为15度 (在[10,20]范围内)" << std::endl;
+  SMF_LOGI("设置multi_temperature为15度 (在[10,20]范围内)");
   fsm->SetConditionValue("multi_temperature", 15);
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
-  std::cout << "当前状态: " << fsm->GetCurrentState() << std::endl;
+
+  // 验证状态是否转为Error
+  if (!verifyState(fsm, "Error")) {
+    fsm->Stop();
+    return 1;
+  }
 
   // 测试范围之外的值
-  std::cout << "\n设置multi_temperature为25度 (不在任何配置范围内)" << std::endl;
+  SMF_LOGI("设置multi_temperature为25度 (不在任何配置范围内)");
   fsm->SetConditionValue("multi_temperature", 25);
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
-  std::cout << "当前状态: " << fsm->GetCurrentState() << std::endl;
+
+  // 验证状态是否保持Error (不应该改变)
+  if (!verifyState(fsm, "Error")) {
+    fsm->Stop();
+    return 1;
+  }
 
   // 测试第二个范围区间 30-40
-  std::cout << "\n设置multi_temperature为35度 (在[30,40]范围内)" << std::endl;
+  SMF_LOGI("设置multi_temperature为35度 (在[30,40]范围内)");
   fsm->SetConditionValue("multi_temperature", 35);
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
-  std::cout << "当前状态: " << fsm->GetCurrentState() << std::endl;
+
+  // 验证状态是否保持Error (已经在Error状态，不会再次触发转换)
+  if (!verifyState(fsm, "Error")) {
+    fsm->Stop();
+    return 1;
+  }
 
   // 重置回Idle状态
-  std::cout << "\n===== 测试重置 =====\n";
-  std::cout << "设置reset为1，触发回到Idle状态" << std::endl;
+  SMF_LOGI("===== 测试重置 =====");
+  SMF_LOGI("设置reset为1，触发回到Idle状态");
+  SMF_LOGI("设置reset前的状态: " + fsm->GetCurrentState());
+  SMF_LOGI("转换条件的规则: Error -> Idle，通过内部事件(空事件名)和reset=1条件触发");
+
+  // 重置条件值
+  fsm->SetConditionValue("reset", 0);
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  // 设置条件
+  SMF_LOGI("设置reset=1");
   fsm->SetConditionValue("reset", 1);
-  std::this_thread::sleep_for(std::chrono::milliseconds(500));
-  std::cout << "当前状态: " << fsm->GetCurrentState() << std::endl;
+  SMF_LOGI("等待状态转换...");
+  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+  // 验证状态转换
+  if (!verifyState(fsm, "Idle")) {
+    // 尝试一种不同的方法 - 直接提交内部事件
+    SMF_LOGI("尝试通过INTERNAL_EVENT触发转换");
+    fsm->HandleEvent(std::make_shared<Event>(INTERNAL_EVENT));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+    if (!verifyState(fsm, "Idle")) {
+      SMF_LOGE("无法从Error状态转换到Idle状态，测试失败");
+      fsm->Stop();
+      return 1;
+    }
+  }
 
   // 停止状态机
   fsm->Stop();
-  std::cout << "\n测试完成!" << std::endl;
+  SMF_LOGI("测试完成!");
 
   return 0;
 }

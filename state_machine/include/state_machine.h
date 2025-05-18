@@ -53,6 +53,11 @@
 #include <vector>
 
 #include "common_define.h"
+#include "components/condition_manager.h"
+#include "components/config_loader.h"
+#include "components/event_handler.h"
+#include "components/state_manager.h"
+#include "components/transition_manager.h"
 #include "event.h"
 #include "logger.h"                // 添加日志头文件
 #include "nlohmann-json/json.hpp"  // 引入 nlohmann/json 库
@@ -67,10 +72,6 @@ class FiniteStateMachine final : public std::enable_shared_from_this<FiniteState
   friend class StateMachineFactory;
 
  public:
-  // 定义内部事件常量
-  static constexpr const char* INTERNAL_EVENT = "__INTERNAL_EVENT__";  // 使用更明确的名称
-  static constexpr const char* STATE_TIMEOUT_EVENT = "__STATE_TIMEOUT_EVENT__";  // 状态超时事件常量
-
   FiniteStateMachine(const FiniteStateMachine&) = delete;
   FiniteStateMachine& operator=(const FiniteStateMachine&) = delete;
   FiniteStateMachine(FiniteStateMachine&&) = delete;
@@ -80,10 +81,8 @@ class FiniteStateMachine final : public std::enable_shared_from_this<FiniteState
     Stop();
   }
 
-  // 初始化接口
-  bool Init(const std::string& configFile);
+  bool Init(const std::string& configDir);
 
-  // 新增: 优化的初始化接口，允许分别指定各配置文件路径
   bool Init(const std::string& stateConfigFile, const std::string& eventGenerateConfigDir,
             const std::string& transConfigDir);
 
@@ -109,7 +108,7 @@ class FiniteStateMachine final : public std::enable_shared_from_this<FiniteState
       return;
     }
     if (!state_event_handler_) {
-      state_event_handler_ = std::make_shared<StateEventHandler>();
+      state_event_handler_ = std::make_unique<StateEventHandler>();
     }
     state_event_handler_->SetTransitionCallback(instance, method);
   }
@@ -125,7 +124,7 @@ class FiniteStateMachine final : public std::enable_shared_from_this<FiniteState
       return;
     }
     if (!state_event_handler_) {
-      state_event_handler_ = std::make_shared<StateEventHandler>();
+      state_event_handler_ = std::make_unique<StateEventHandler>();
     }
     state_event_handler_->SetPreEventCallback(instance, method);
   }
@@ -141,7 +140,7 @@ class FiniteStateMachine final : public std::enable_shared_from_this<FiniteState
       return;
     }
     if (!state_event_handler_) {
-      state_event_handler_ = std::make_shared<StateEventHandler>();
+      state_event_handler_ = std::make_unique<StateEventHandler>();
     }
     state_event_handler_->SetEnterStateCallback(instance, method);
   }
@@ -152,12 +151,12 @@ class FiniteStateMachine final : public std::enable_shared_from_this<FiniteState
   // 设置状态退出回调 - 类成员函数版本
   template <typename T>
   void SetExitStateCallback(T* instance, void (T::*method)(const std::vector<State>&)) {
-    if (initialized_ || running_) {
-      SMF_LOGE("Cannot set exit callback callback while running.");
+    if (running_) {
+      SMF_LOGE("Cannot set exit state callback while running.");
       return;
     }
     if (!state_event_handler_) {
-      state_event_handler_ = std::make_shared<StateEventHandler>();
+      state_event_handler_ = std::make_unique<StateEventHandler>();
     }
     state_event_handler_->SetExitStateCallback(instance, method);
   }
@@ -168,12 +167,12 @@ class FiniteStateMachine final : public std::enable_shared_from_this<FiniteState
   // 设置事件回收回调 - 类成员函数版本
   template <typename T>
   void SetPostEventCallback(T* instance, void (T::*method)(const EventPtr&, bool)) {
-    if (initialized_ || running_) {
+    if (running_) {
       SMF_LOGE("Cannot set post event callback while running.");
       return;
     }
     if (!state_event_handler_) {
-      state_event_handler_ = std::make_shared<StateEventHandler>();
+      state_event_handler_ = std::make_unique<StateEventHandler>();
     }
     state_event_handler_->SetPostEventCallback(instance, method);
   }
@@ -181,124 +180,43 @@ class FiniteStateMachine final : public std::enable_shared_from_this<FiniteState
   // 继续支持原有的接口，但现在作为兼容层
   void SetStateEventHandler(std::shared_ptr<StateEventHandler> handler);
 
-  // 添加状态
-  void AddState(const State& name, const State& parent = "");
-
-  // 添加状态转移规则
-  void AddTransition(const TransitionRule& rule);
-
-  // 设置初始状态
-  void SetInitialState(const State& state);
-
   // 获取当前状态
   State GetCurrentState() const;
 
-  // 修改设置条件值接口为异步处理
+  // 设置条件值
   void SetConditionValue(const std::string& name, int value);
 
-  // 获取状态及其所有父状态（从子到父的顺序）
-  std::vector<State> GetStateHierarchy(const State& state) const;
-  void GetStateHierarchy(const State& from, const State& to, std::vector<State>& exit_states,
-                         std::vector<State>& enter_states) const;
+  // 获取条件值
+  void GetConditionValue(const std::string& name, int& value) const;
 
  private:
-  FiniteStateMachine(const std::string& name) : name_(name), running_(false), initialized_(false) {}
-  // 从 JSON 文件加载状态机配置
-  void LoadFromJSON(const std::string& configPath);
-
-  // 新增: 从分离的JSON文件加载状态机配置
-  void LoadFromJSON(const std::string& stateConfigFile, const std::string& eventGenerateConfigDir,
-                    const std::string& transConfigDir);
-
-  // 事件处理循环 - 专注于处理事件队列
-  void EventLoop();
-
-  // 条件处理循环 - 专注于处理条件更新
-  void ConditionLoop();
-
-  // 处理单个事件
-  void ProcessEvent(const EventPtr& event);
-
-  // 检查条件触发规则 - 这个方法不再使用
-  // 保留代码但标记为废弃，供参考
-  void CheckConditionTransitions();
-
-  // 新增：打印满足的条件
-  void PrintSatisfiedConditions(const std::vector<Condition>& conditions);
-
-  // 检查条件是否满足
-  bool CheckConditions(const std::vector<Condition>& conditions, const std::string& op,
-                       std::vector<ConditionInfo>& condition_infos);
-
-  // 处理条件更新队列
-  void ProcessConditionUpdates(std::queue<ConditionUpdateEvent>& conditionUpdateQueue);
-
-  // 添加新方法：检查事件条件
-  void TriggerEvent();
-
-  // 新增定时器循环处理
-  void TimerLoop();
-
-  // 事件触发循环
-  void EventTriggerLoop();
-
-  // 状态超时检查循环
-  void StateTimeoutLoop();
+  FiniteStateMachine(const std::string& name)
+      : name_(name),
+        running_(false),
+        initialized_(false),
+        state_event_handler_(std::make_shared<StateEventHandler>()),
+        transition_manager_(std::make_unique<TransitionManager>()),
+        state_manager_(std::make_unique<StateManager>()),
+        condition_manager_(std::make_unique<ConditionManager>()),
+        event_handler_(
+            std::make_unique<EventHandler>(state_manager_.get(), condition_manager_.get(),
+                                           transition_manager_.get(), state_event_handler_.get())),
+        config_loader_(
+            std::make_unique<ConfigLoader>(state_manager_.get(), condition_manager_.get(),
+                                           transition_manager_.get(), event_handler_.get())) {
+  }
 
  private:
   std::string name_;
-
-  // 存储所有状态
-  std::unordered_map<State, StateInfo> states_;
-
-  // 存储所有条件
-  std::vector<Condition> all_conditions_;
-
-  // 存储事件触发的状态转移规则 - 修改为multimap允许同一状态下存在多个同名事件的转移规则
-  std::multimap<std::pair<State, Event>, TransitionRule> state_transitions_;
-
-  // 当前状态
-  State current_state_;
-
-  // 存储状态超时信息
-  StateTimeoutInfo current_state_timeout_;
-  std::mutex state_timeout_mutex_;
-  std::condition_variable state_timeout_cv_;
-  std::thread state_timeout_thread_;
-
-  // 条件值
-  std::unordered_map<std::string, ConditionValue> condition_values_;
-  std::mutex condition_values_mutex_;
-
-  // 状态转移处理器
-  std::shared_ptr<StateEventHandler> state_event_handler_;
-
-  // 新增成员变量
   std::atomic_bool running_{false};
   std::atomic_bool initialized_{false};
-  std::thread event_thread_;
-  std::thread event_trigger_thread_;
-  std::thread condition_thread_;
-  std::thread timer_thread_;
-  std::queue<EventPtr> event_queue_;
-  std::mutex event_mutex_;
-  std::condition_variable event_cv_;
-  std::mutex event_trigger_mutex_;
-  std::condition_variable event_trigger_cv_;
-  int condition_update_count_{0};
-  std::queue<ConditionUpdateEvent> condition_update_queue_;
-  std::mutex condition_update_mutex_;
-  std::condition_variable condition_update_cv_;
-  mutable std::mutex state_mutex_;
-  std::priority_queue<DurationCondition, std::vector<DurationCondition>,
-                      std::function<bool(const DurationCondition&, const DurationCondition&)>>
-      timer_queue_{[](const DurationCondition& lhs, const DurationCondition& rhs) {
-        return lhs.expiryTime > rhs.expiryTime;
-      }};
-  std::mutex timer_mutex_;
-  std::condition_variable timer_cv_;
-  // 在类的成员变量部分添加事件定义存储
-  std::vector<EventDefinition> event_definitions_;
+  std::shared_ptr<StateEventHandler> state_event_handler_;
+  // 组件
+  std::unique_ptr<ITransitionManager> transition_manager_;
+  std::unique_ptr<IStateManager> state_manager_;
+  std::unique_ptr<IConditionManager> condition_manager_;
+  std::unique_ptr<IEventHandler> event_handler_;
+  std::unique_ptr<IConfigLoader> config_loader_;
 };
 
 using FiniteStateMachinePtr = std::shared_ptr<FiniteStateMachine>;

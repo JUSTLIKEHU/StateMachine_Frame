@@ -1,10 +1,12 @@
 /**
- * @file state_machine_factory.h
- * @brief state machine factory
+ * @file i_component.h
+ * @brief Interface for state machine components
  * @author xiaokui.hu
- * @date 2025-05-11
- * @details state machine factory, create state machine;
- */
+ * @date 2025-05-17
+ * @details This file defines the base interface for all components in the state machine framework.
+ *          Components implement this interface to provide standard lifecycle methods.
+ * @version 1.0.0
+ **/
 
 /**
  * MIT License
@@ -32,22 +34,14 @@
 
 #pragma once
 
-#include "state_machine.h"
-
 namespace smf {
 
-class StateMachineFactory {
+class IComponent {
  public:
-  static std::shared_ptr<FiniteStateMachine> CreateStateMachine(const std::string& name);
-
-  static std::vector<std::string> GetAllStateMachineNames();
-
-  static std::shared_ptr<FiniteStateMachine> GetStateMachine(const std::string& name);
-
-  static std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> GetAllStateMachines();
-
- private:
-  static std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> state_machines_;
+  virtual ~IComponent() = default;
+  virtual void Start() = 0;
+  virtual void Stop() = 0;
+  virtual bool IsRunning() const = 0;
 };
 
 }  // namespace smf

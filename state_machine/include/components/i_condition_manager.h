@@ -1,10 +1,13 @@
 /**
- * @file state_machine_factory.h
- * @brief state machine factory
+ * @file i_condition_manager.h
+ * @brief Interface for condition management
  * @author xiaokui.hu
- * @date 2025-05-11
- * @details state machine factory, create state machine;
- */
+ * @date 2025-05-17
+ * @details This file defines the interface for the condition manager component.
+ *          The condition manager is responsible for tracking and evaluating conditions
+ *          that affect state transitions in the state machine.
+ * @version 1.0.0
+ **/
 
 /**
  * MIT License
@@ -32,22 +35,25 @@
 
 #pragma once
 
-#include "state_machine.h"
+#include <functional>
+#include <string>
+#include <vector>
 
+#include "common_define.h"
+#include "i_component.h"
 namespace smf {
 
-class StateMachineFactory {
+class IConditionManager : public IComponent {
  public:
-  static std::shared_ptr<FiniteStateMachine> CreateStateMachine(const std::string& name);
-
-  static std::vector<std::string> GetAllStateMachineNames();
-
-  static std::shared_ptr<FiniteStateMachine> GetStateMachine(const std::string& name);
-
-  static std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> GetAllStateMachines();
-
- private:
-  static std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> state_machines_;
+  virtual ~IConditionManager() = default;
+  virtual void SetConditionValue(const std::string& name, int value) = 0;
+  virtual void GetConditionValue(const std::string& name, int& value) const = 0;
+  virtual bool CheckConditions(const std::vector<Condition>& conditions, const std::string& op,
+                               std::vector<ConditionInfo>& condition_infos) = 0;
+  virtual void AddCondition(const Condition& condition) = 0;
+  // 新增：注册条件变化回调
+  using ConditionChangeCallback = std::function<void(const std::string&, int, int, bool)>;
+  virtual void RegisterConditionChangeCallback(ConditionChangeCallback callback) = 0;
 };
 
 }  // namespace smf

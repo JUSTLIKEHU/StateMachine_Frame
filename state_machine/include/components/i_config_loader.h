@@ -1,10 +1,13 @@
 /**
- * @file state_machine_factory.h
- * @brief state machine factory
+ * @file i_config_loader.h
+ * @brief Interface for configuration loading
  * @author xiaokui.hu
- * @date 2025-05-11
- * @details state machine factory, create state machine;
- */
+ * @date 2025-05-17
+ * @details This file defines the interface for the configuration loader component.
+ *          The config loader is responsible for loading state machine configuration
+ *          from JSON files, including states, events, and transitions.
+ * @version 1.0.0
+ **/
 
 /**
  * MIT License
@@ -32,22 +35,19 @@
 
 #pragma once
 
-#include "state_machine.h"
+#include <string>
+
+#include "i_component.h"
 
 namespace smf {
 
-class StateMachineFactory {
+class IConfigLoader : public IComponent {
  public:
-  static std::shared_ptr<FiniteStateMachine> CreateStateMachine(const std::string& name);
-
-  static std::vector<std::string> GetAllStateMachineNames();
-
-  static std::shared_ptr<FiniteStateMachine> GetStateMachine(const std::string& name);
-
-  static std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> GetAllStateMachines();
-
- private:
-  static std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> state_machines_;
+  virtual ~IConfigLoader() = default;
+  virtual bool LoadStateConfig(const std::string& stateConfigFile) = 0;
+  virtual bool LoadEventConfig(const std::string& eventConfigDir) = 0;
+  virtual bool LoadTransitionConfig(const std::string& transConfigDir) = 0;
+  virtual bool LoadConfig(const std::string& configFile) = 0;
 };
 
 }  // namespace smf
