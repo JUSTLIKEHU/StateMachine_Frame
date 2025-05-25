@@ -66,17 +66,19 @@ bool TransitionManager::AddTransition(const TransitionRule& rule) {
     return false;
   }
 
-  TransitionKey key{rule.from, rule.event};
+  // 为每个事件添加转换规则
+  for (const auto& event : rule.events) {
+    TransitionKey key{rule.from, event};
+    {
+      std::unique_lock<std::shared_mutex> lock(mutex_);
+      transitions_.insert({key, rule});
 
-  {
-    std::unique_lock<std::shared_mutex> lock(mutex_);
-    transitions_.insert({key, rule});
-
-    std::string log_msg =
-        "Added transition rule: " + rule.from + " -> " + rule.to + " on event " + rule.event;
-    SMF_LOGI(log_msg);
-    return true;
+      std::string log_msg =
+          "Added transition rule: " + rule.from + " -> " + rule.to + " on event " + event;
+      SMF_LOGI(log_msg);
+    }
   }
+  return true;
 }
 
 bool TransitionManager::FindTransition(const State& current_state, const EventPtr& event,

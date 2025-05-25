@@ -22,7 +22,8 @@ cd "$BIN_DIR" || {
 }
 
 # 检查测试可执行文件是否存在
-if [ ! -f "./main_test" ] && [ ! -f "./comprehensive_test" ] && [ ! -f "./condition_event_test" ] && [ ! -f "./multi_range_conditions_test" ] && [ ! -f "./state_timeout_test" ]; then
+if [ ! -f "./main_test" ] && [ ! -f "./comprehensive_test" ] && [ ! -f "./condition_event_test" ] && \
+   [ ! -f "./multi_range_conditions_test" ] && [ ! -f "./state_timeout_test" ] && [ ! -f "./multi_event_test" ]; then
   echo -e "${RED}错误: 找不到测试可执行文件，请先运行 ./build.sh test 来构建测试${NC}"
   cd ../../
   exit 1
@@ -36,6 +37,7 @@ if [ "$#" -lt 1 ]; then
   echo -e "  $0 condition ${GREEN}# 运行condition_event_test程序${NC}"
   echo -e "  $0 multi     ${GREEN}# 运行multi_range_conditions_test程序${NC}"
   echo -e "  $0 timeout   ${GREEN}# 运行state_timeout_test程序${NC}"
+  echo -e "  $0 event     ${GREEN}# 运行multi_event_test程序${NC}"
   echo -e "  $0 all      ${GREEN}# 运行所有测试程序${NC}"
   exit 1
 fi
@@ -107,6 +109,20 @@ if [ "$1" = "timeout" ] || [ "$1" = "all" ]; then
     "./state_timeout_test"
     if [ $? -ne 0 ]; then
       echo -e "${RED}state_timeout_test运行失败${NC}"
+    fi
+  fi
+fi
+
+if [ "$1" = "event" ] || [ "$1" = "all" ]; then
+  echo -e "${BLUE}===============================${NC}"
+  echo -e "${BLUE}运行multi_event_test...${NC}"
+  echo -e "${BLUE}===============================${NC}"
+  if [ ! -f "./multi_event_test" ]; then
+    echo -e "${RED}multi_event_test不存在${NC}"
+  else
+    "./multi_event_test"
+    if [ $? -ne 0 ]; then
+      echo -e "${RED}multi_event_test运行失败${NC}"
     fi
   fi
 fi

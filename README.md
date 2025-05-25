@@ -112,6 +112,9 @@ StateMachine_Frame/
 │   │           └── working2init.json   # Working to init transition
 │   ├── main_test/            # Basic tests
 │   │   └── main_test.cpp     # Basic functionality test
+│   ├── multi_event_test/     # Multi-event tests
+│   │   ├── CMakeLists.txt    # Test build configuration
+│   │   └── multi_event_test.cpp  # Multi-event trigger test
 │   ├── multi_range_conditions/ # Multi-dimensional range condition tests
 │   │   ├── CMakeLists.txt      # Test build configuration
 │   │   └── test_multi_range_conditions.cpp # Multi-range condition test
@@ -272,7 +275,7 @@ class IConfigLoader : public IComponent {
   ```cpp
   struct TransitionRule {
     State from;                         // Source state
-    std::string event;                  // Triggering event (can be empty)
+    std::vector<std::string> events;    // Triggering event list (can be empty)
     State to;                           // Target state
     std::vector<Condition> conditions;  // List of conditions
     std::string conditionsOperator;     // Condition operator ("AND" or "OR")
@@ -623,7 +626,7 @@ SMF_LOGE("This is an error message");
 
 ## Testing
 
-The project includes two test examples that can be run using the provided script:
+The project includes multiple test examples that can be run using the provided script:
 
 ### Running Tests with Script
 ```bash
@@ -641,6 +644,9 @@ The project includes two test examples that can be run using the provided script
 
 # Run state timeout test
 ./run_test.sh timeout
+
+# Run multi-event test
+./run_test.sh event
 
 # Run all tests
 ./run_test.sh all
@@ -672,6 +678,13 @@ A specialized test for the multi-dimensional range condition feature:
 A specialized test for the state timeout feature:
 - Testing state timeout logic and its integration with the state machine
 - Demonstrating state timeout handling in different scenarios
+
+### Multi-event Test
+A specialized test for the multi-event triggering feature:
+- Testing support for multiple trigger events in a single transition rule
+- Verifying behavior of different events triggering the same transition
+- Testing event handling priority and order
+- Complete flow testing including condition checks and state transitions
 
 ---
 

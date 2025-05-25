@@ -112,6 +112,9 @@ StateMachine_Frame/
 │   │           └── working2init.json   # 工作到初始化转换
 │   ├── main_test/            # 基本测试
 │   │   └── main_test.cpp     # 基本功能测试
+│   ├── multi_event_test/     # 多事件测试
+│   │   ├── CMakeLists.txt    # 测试构建配置
+│   │   └── multi_event_test.cpp  # 多事件触发测试
 │   ├── multi_range_conditions/ # 多维范围条件测试
 │   │   ├── CMakeLists.txt      # 测试构建配置
 │   │   └── test_multi_range_conditions.cpp # 多范围条件测试
@@ -272,7 +275,7 @@ class IConfigLoader : public IComponent {
   ```cpp
   struct TransitionRule {
     State from;                         // 起始状态
-    std::string event;                  // 事件（可为空）
+    std::vector<std::string> events;    // 事件列表（可为空）
     State to;                           // 目标状态
     std::vector<Condition> conditions;  // 条件列表
     std::string conditionsOperator;     // 条件运算符 ("AND" 或 "OR")
@@ -623,7 +626,7 @@ SMF_LOGE("这是一条错误信息");
 
 ## 测试
 
-项目包含两个测试示例，可以使用提供的脚本运行：
+项目包含多个测试示例，可以使用提供的脚本运行：
 
 ### 使用脚本运行测试
 ```bash
@@ -641,6 +644,9 @@ SMF_LOGE("这是一条错误信息");
 
 # 运行状态超时测试
 ./run_test.sh timeout
+
+# 运行多事件测试
+./run_test.sh event
 
 # 运行所有测试
 ./run_test.sh all
@@ -672,6 +678,13 @@ SMF_LOGE("这是一条错误信息");
 专门用于测试状态超时功能的测试：
 - 测试状态超时机制
 - 验证状态超时后的处理逻辑
+
+### 多事件测试
+专门用于测试多事件触发功能的测试：
+- 测试同一转换规则支持多个触发事件
+- 验证不同事件触发相同转换的行为
+- 测试事件处理的优先级和顺序
+- 包含条件检查和状态转换的完整流程测试
 
 ---
 

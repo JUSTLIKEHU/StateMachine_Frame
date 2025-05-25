@@ -77,7 +77,7 @@ struct ConditionInfo {
 // 状态转移规则
 struct TransitionRule {
   State from;                         // 起始状态
-  std::string event;                  // 事件（可为空）
+  std::vector<std::string> events;    // 事件列表（可为空）
   State to;                           // 目标状态
   std::vector<Condition> conditions;  // 条件列表
   std::string conditionsOperator;     // 条件运算符 ("AND" 或 "OR")

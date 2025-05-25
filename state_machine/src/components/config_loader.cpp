@@ -268,9 +268,19 @@ bool ConfigLoader::ValidateTransitionConfig(const json& config) const {
       return false;
     }
 
-    if (config.contains("event") && !config["event"].is_string()) {
-      SMF_LOGE("Invalid 'event' in transition config");
-      return false;
+    if (config.contains("event")) {
+      if (!config["event"].is_string() && !config["event"].is_array()) {
+        SMF_LOGE("Invalid 'event' in transition config - must be string or array");
+        return false;
+      }
+      if (config["event"].is_array()) {
+        for (const auto& event : config["event"]) {
+          if (!event.is_string()) {
+            SMF_LOGE("Invalid event in array - all events must be strings");
+            return false;
+          }
+        }
+      }
     }
 
     if (config.contains("conditions")) {
@@ -380,12 +390,26 @@ bool ConfigLoader::ParseTransitionConfig(const json& config) {
     TransitionRule rule;
     rule.from = config["from"];
     rule.to = config["to"];
-    rule.event = config.value("event", "");
-    if (rule.event.empty()) {
+    
+    // 处理事件字段
+    if (config.contains("event")) {
+      if (config["event"].is_string()) {
+        // 单个事件
+        rule.events.push_back(config["event"].get<std::string>());
+      } else if (config["event"].is_array()) {
+        // 多个事件
+        for (const auto& event : config["event"]) {
+          rule.events.push_back(event.get<std::string>());
+        }
+      }
+    }
+    
+    if (rule.events.empty()) {
       SMF_LOGW("Missing 'event' in transition config: " + rule.from + " -> " + rule.to +
                " , use INTERNAL_EVENT as default");
-      rule.event = INTERNAL_EVENT;
+      rule.events.push_back(INTERNAL_EVENT);
     }
+    
     rule.conditionsOperator = config.value("conditions_operator", "AND");
 
     if (state_names_.find(rule.from) == state_names_.end() ||
