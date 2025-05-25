@@ -61,9 +61,9 @@ class ConditionManager : public IConditionManager {
 
   // IConditionManager interface
   void SetConditionValue(const std::string& name, int value) override;
-  bool CheckConditions(const std::vector<Condition>& conditions, const std::string& op,
+  bool CheckConditions(const std::vector<ConditionSharedPtr>& conditions, const std::string& op,
                        std::vector<ConditionInfo>& condition_infos) override;
-  void AddCondition(const Condition& condition) override;
+  void AddCondition(const ConditionSharedPtr& condition) override;
   void GetConditionValue(const std::string& name, int& value) const override;
   void RegisterConditionChangeCallback(ConditionChangeCallback callback) override;
 
@@ -77,7 +77,7 @@ class ConditionManager : public IConditionManager {
   std::atomic_bool running_{false};
 
   // 条件相关
-  std::vector<Condition> all_conditions_;
+  std::vector<ConditionSharedPtr> all_conditions_;
   std::unordered_map<std::string, ConditionValue> condition_values_;
   mutable std::mutex condition_values_mutex_;
 

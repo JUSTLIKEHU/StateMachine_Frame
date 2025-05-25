@@ -44,7 +44,7 @@
 #include <ostream>
 #include <string>
 #include <vector>
-
+#include <memory>
 namespace smf {
 
 // 定义内部事件
@@ -76,11 +76,11 @@ struct ConditionInfo {
 
 // 状态转移规则
 struct TransitionRule {
-  State from;                         // 起始状态
-  std::vector<std::string> events;    // 事件列表（可为空）
-  State to;                           // 目标状态
-  std::vector<Condition> conditions;  // 条件列表
-  std::string conditionsOperator;     // 条件运算符 ("AND" 或 "OR")
+  State from;                                          // 起始状态
+  std::vector<std::string> events;                     // 事件列表（可为空）
+  State to;                                            // 目标状态
+  std::vector<std::shared_ptr<Condition>> conditions;  // 条件列表
+  std::string conditionsOperator;                      // 条件运算符 ("AND" 或 "OR")
 };
 
 // 状态信息
@@ -116,9 +116,13 @@ struct DurationCondition {
 
 // 添加事件定义结构体
 struct EventDefinition {
-  std::string name;                   // 事件名称
-  std::string trigger_mode;           // 触发模式：edge (边缘触发) 或 level (水平触发)
-  std::vector<Condition> conditions;  // 触发事件的条件列表
-  std::string conditionsOperator;     // 条件运算符 ("AND" 或 "OR")
+  std::string name;                                    // 事件名称
+  std::string trigger_mode;                            // 触发模式：edge (边缘触发) 或 level (水平触发)
+  std::vector<std::shared_ptr<Condition>> conditions;  // 触发事件的条件列表
+  std::string conditionsOperator;                      // 条件运算符 ("AND" 或 "OR")
 };
+
+using ConditionSharedPtr = std::shared_ptr<Condition>;
+using TransitionRuleSharedPtr = std::shared_ptr<TransitionRule>;
+
 }  // namespace smf

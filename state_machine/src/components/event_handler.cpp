@@ -109,30 +109,30 @@ void EventHandler::ProcessEvent(const EventPtr& event) {
   }
 
   bool eventHandled = false;
-  std::vector<TransitionRule> rules;
+  std::vector<TransitionRuleSharedPtr> rules;
 
   // 查找可用的转换规则
   if (transition_manager_->FindTransition(current_state, event, rules)) {
     for (const auto& rule : rules) {
       std::vector<ConditionInfo> condition_infos;
-      if (condition_manager_->CheckConditions(rule.conditions, rule.conditionsOperator,
+      if (condition_manager_->CheckConditions(rule->conditions, rule->conditionsOperator,
                                               condition_infos)) {
         PrintSatisfiedConditions(condition_infos);
         // 获取状态层次结构
         std::vector<State> exitStates;
         std::vector<State> enterStates;
-        state_manager_->GetStateHierarchy(current_state, rule.to, exitStates, enterStates);
+        state_manager_->GetStateHierarchy(current_state, rule->to, exitStates, enterStates);
 
         // 执行状态转换
         if (state_event_handler_) {
-          SMF_LOGI("Transition: " + current_state + " -> " + rule.to + " on event " +
+          SMF_LOGI("Transition: " + current_state + " -> " + rule->to + " on event " +
                    event->toString());
           state_event_handler_->OnTransition(exitStates, event, enterStates);
           state_event_handler_->OnExitState(exitStates);
         }
 
         // 更新当前状态
-        state_manager_->SetState(rule.to);
+        state_manager_->SetState(rule->to);
 
         // 调用状态进入处理
         if (state_event_handler_) {

@@ -60,21 +60,21 @@ void TransitionManager::Stop() {
 
 bool TransitionManager::IsRunning() const { return running_; }
 
-bool TransitionManager::AddTransition(const TransitionRule& rule) {
+bool TransitionManager::AddTransition(const TransitionRuleSharedPtr& rule) {
   if (running_) {
     SMF_LOGE("Cannot add transition while running.");
     return false;
   }
 
   // 为每个事件添加转换规则
-  for (const auto& event : rule.events) {
-    TransitionKey key{rule.from, event};
+  for (const auto& event : rule->events) {
+    TransitionKey key{rule->from, event};
     {
       std::unique_lock<std::shared_mutex> lock(mutex_);
       transitions_.insert({key, rule});
 
       std::string log_msg =
-          "Added transition rule: " + rule.from + " -> " + rule.to + " on event " + event;
+          "Added transition rule: " + rule->from + " -> " + rule->to + " on event " + event;
       SMF_LOGI(log_msg);
     }
   }
@@ -82,7 +82,7 @@ bool TransitionManager::AddTransition(const TransitionRule& rule) {
 }
 
 bool TransitionManager::FindTransition(const State& current_state, const EventPtr& event,
-                                       std::vector<TransitionRule>& out_rules) {
+                                       std::vector<TransitionRuleSharedPtr>& out_rules) {
   if (!running_) {
     SMF_LOGE("TransitionManager is not running");
     return false;

@@ -79,7 +79,7 @@ void ConditionManager::SetConditionValue(const std::string& name, int value) {
   condition_update_cv_.notify_one();
 }
 
-bool ConditionManager::CheckConditions(const std::vector<Condition>& conditions,
+bool ConditionManager::CheckConditions(const std::vector<ConditionSharedPtr>& conditions,
                                        const std::string& op,
                                        std::vector<ConditionInfo>& condition_infos) {
   std::unordered_map<std::string, ConditionValue> values_copy;
@@ -100,16 +100,16 @@ bool ConditionManager::CheckConditions(const std::vector<Condition>& conditions,
   auto now = std::chrono::steady_clock::now();
 
   for (const auto& cond : conditions) {
-    auto it = values_copy.find(cond.name);
+    auto it = values_copy.find(cond->name);
     if (it == values_copy.end()) {
-      throw std::invalid_argument("Condition value not set: " + cond.name);
+      throw std::invalid_argument("Condition value not set: " + cond->name);
     }
 
     int value = it->second.value;
     bool valueInRange = false;
 
     // 检查值是否在任何范围内
-    for (const auto& range : cond.range_values) {
+    for (const auto& range : cond->range_values) {
       if (value >= range.first && value <= range.second) {
         valueInRange = true;
         break;
@@ -117,13 +117,13 @@ bool ConditionManager::CheckConditions(const std::vector<Condition>& conditions,
     }
 
     // 检查持续时间
-    if (cond.duration > 0 && valueInRange) {
+    if (cond->duration > 0 && valueInRange) {
       auto elapsed =
           std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second.lastChangedTime)
               .count();
-      valueInRange = (elapsed >= cond.duration);
+      valueInRange = (elapsed >= cond->duration);
       if (valueInRange) {
-        condition_infos.push_back({cond.name, value, elapsed});
+        condition_infos.push_back({cond->name, value, elapsed});
       }
     }
 
@@ -138,7 +138,7 @@ bool ConditionManager::CheckConditions(const std::vector<Condition>& conditions,
   return (op == "AND");
 }
 
-void ConditionManager::AddCondition(const Condition& condition) {
+void ConditionManager::AddCondition(const ConditionSharedPtr& condition) {
   if (running_) {
     SMF_LOGE("Cannot add condition while running");
     return;
@@ -147,9 +147,9 @@ void ConditionManager::AddCondition(const Condition& condition) {
   all_conditions_.push_back(condition);
 
   // 初始化条件值
-  if (condition_values_.find(condition.name) == condition_values_.end()) {
+  if (condition_values_.find(condition->name) == condition_values_.end()) {
     auto now = std::chrono::steady_clock::now();
-    condition_values_[condition.name] = {condition.name,
+    condition_values_[condition->name] = {condition->name,
                                          0,  // 初始值
                                          now, now};
   }
@@ -282,18 +282,18 @@ void ConditionManager::ProcessConditionUpdates() {
           condition_values_[update.name].lastChangedTime = update.updateTime;
           // 检查是否满足任何条件的范围要求
           for (const auto& cond : all_conditions_) {
-            if (cond.name == update.name) {
-              for (const auto& range : cond.range_values) {
+            if (cond->name == update.name) {
+              for (const auto& range : cond->range_values) {
                 if (update.value >= range.first && update.value <= range.second) {
                   valueInRange = true;
                   break;
                 }
               }
-              if (cond.duration > 0 && valueInRange) {
+              if (cond->duration > 0 && valueInRange) {
                 hasDurationCondition = true;
                 std::lock_guard<std::mutex> timerLock(timer_mutex_);
-                auto expiryTime = update.updateTime + std::chrono::milliseconds(cond.duration);
-                timer_queue_.push({update.name, update.value, cond.duration, expiryTime});
+                auto expiryTime = update.updateTime + std::chrono::milliseconds(cond->duration);
+                timer_queue_.push({update.name, update.value, cond->duration, expiryTime});
                 timer_cv_.notify_one();
                 break;
               }

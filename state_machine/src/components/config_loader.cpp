@@ -341,21 +341,21 @@ bool ConfigLoader::ParseEventConfig(const json& config) {
 
     if (config.contains("conditions")) {
       for (const auto& condJson : config["conditions"]) {
-        Condition cond;
-        cond.name = condJson["name"];
-        cond.duration = condJson.value("duration", 0);
+        ConditionSharedPtr cond = std::make_shared<Condition>();
+        cond->name = condJson["name"];
+        cond->duration = condJson.value("duration", 0);
 
         if (condJson.contains("range")) {
           if (condJson["range"].is_array()) {
             if (condJson["range"].size() == 2 && condJson["range"][0].is_number() &&
                 condJson["range"][1].is_number()) {
               // 简单的一维数组格式 [min, max]
-              cond.range_values.push_back({condJson["range"][0], condJson["range"][1]});
+              cond->range_values.push_back({condJson["range"][0], condJson["range"][1]});
             } else {
               // 二维数组格式 [[min1, max1], [min2, max2], ...]
               for (const auto& range : condJson["range"]) {
                 if (range.is_array() && range.size() == 2) {
-                  cond.range_values.push_back({range[0], range[1]});
+                  cond->range_values.push_back({range[0], range[1]});
                 } else {
                   SMF_LOGE("Invalid range format in event config: " + eventDef.name);
                   return false;
@@ -387,74 +387,81 @@ bool ConfigLoader::ParseEventConfig(const json& config) {
 
 bool ConfigLoader::ParseTransitionConfig(const json& config) {
   try {
-    TransitionRule rule;
-    rule.from = config["from"];
-    rule.to = config["to"];
+    TransitionRuleSharedPtr rule = std::make_shared<TransitionRule>();
+    rule->from = config["from"];
+    rule->to = config["to"];
     
     // 处理事件字段
     if (config.contains("event")) {
       if (config["event"].is_string()) {
         // 单个事件
-        rule.events.push_back(config["event"].get<std::string>());
+        auto event = config["event"].get<std::string>();
+        if (event.empty()) {
+          SMF_LOGW("'event' is empty in transition config: " + rule->from + " -> " + rule->to +
+                   ", use INTERNAL_EVENT as default");
+          rule->events.push_back(INTERNAL_EVENT);
+        } else {
+          rule->events.push_back(event);
+        }
       } else if (config["event"].is_array()) {
         // 多个事件
         for (const auto& event : config["event"]) {
-          rule.events.push_back(event.get<std::string>());
+          rule->events.push_back(event.get<std::string>());
         }
       }
     }
-    
-    if (rule.events.empty()) {
-      SMF_LOGW("Missing 'event' in transition config: " + rule.from + " -> " + rule.to +
+
+    if (rule->events.empty()) {
+      SMF_LOGW("Missing 'event' in transition config: " + rule->from + " -> " + rule->to +
                " , use INTERNAL_EVENT as default");
-      rule.events.push_back(INTERNAL_EVENT);
+      rule->events.push_back(INTERNAL_EVENT);
     }
     
-    rule.conditionsOperator = config.value("conditions_operator", "AND");
+    rule->conditionsOperator = config.value("conditions_operator", "AND");
 
-    if (state_names_.find(rule.from) == state_names_.end() ||
-        state_names_.find(rule.to) == state_names_.end()) {
-      SMF_LOGE("Invalid 'from' or 'to' state in transition config: " + rule.from + " -> " +
-               rule.to);
+    if (state_names_.find(rule->from) == state_names_.end() ||
+        state_names_.find(rule->to) == state_names_.end()) {
+      SMF_LOGE("Invalid 'from' or 'to' state in transition config: " + rule->from + " -> " +
+               rule->to);
       return false;
     }
 
     if (config.contains("conditions")) {
       for (const auto& condJson : config["conditions"]) {
-        Condition cond;
-        cond.name = condJson["name"];
-        cond.duration = condJson.value("duration", 0);
+        ConditionSharedPtr cond = std::make_shared<Condition>();
+        cond->name = condJson["name"];
+        cond->duration = condJson.value("duration", 0);
 
         if (condJson.contains("range")) {
           if (condJson["range"].is_array()) {
             if (condJson["range"].size() == 2 && condJson["range"][0].is_number() &&
                 condJson["range"][1].is_number()) {
               // 简单的一维数组格式 [min, max]
-              cond.range_values.push_back({condJson["range"][0], condJson["range"][1]});
+              cond->range_values.push_back({condJson["range"][0], condJson["range"][1]});
             } else {
               // 二维数组格式 [[min1, max1], [min2, max2], ...]
               for (const auto& range : condJson["range"]) {
                 if (range.is_array() && range.size() == 2) {
-                  cond.range_values.push_back({range[0], range[1]});
+                  cond->range_values.push_back({range[0], range[1]});
                 } else {
-                  SMF_LOGE("Invalid range format in transition config for: " + rule.from);
+                  SMF_LOGE("Invalid range format in transition config for: " + rule->from);
                   return false;
                 }
               }
             }
           } else {
-            SMF_LOGE("Range must be an array in transition config for: " + rule.from);
+            SMF_LOGE("Range must be an array in transition config for: " + rule->from);
             return false;
           }
         }
 
-        rule.conditions.push_back(cond);
+        rule->conditions.push_back(cond);
         condition_manager_->AddCondition(cond);
       }
     }
 
     if (!transition_manager_->AddTransition(rule)) {
-      SMF_LOGE("Failed to add transition rule: " + rule.from + " -> " + rule.to);
+      SMF_LOGE("Failed to add transition rule: " + rule->from + " -> " + rule->to);
       return false;
     }
 

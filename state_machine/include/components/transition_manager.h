@@ -55,9 +55,9 @@ class TransitionManager : public ITransitionManager {
   bool IsRunning() const override;
 
   // ITransitionManager interface
-  bool AddTransition(const TransitionRule& rule) override;
+  bool AddTransition(const TransitionRuleSharedPtr& rule) override;
   bool FindTransition(const State& current_state, const EventPtr& event,
-                      std::vector<TransitionRule>& out_rules) override;
+                      std::vector<TransitionRuleSharedPtr>& out_rules) override;
   void Clear() override;
 
  private:
@@ -80,7 +80,7 @@ class TransitionManager : public ITransitionManager {
   };
 
   // 存储转换规则
-  std::unordered_multimap<TransitionKey, TransitionRule, TransitionKeyHash> transitions_;
+  std::unordered_multimap<TransitionKey, TransitionRuleSharedPtr, TransitionKeyHash> transitions_;
 
   // 使用共享互斥锁实现读写锁
   mutable std::shared_mutex mutex_;

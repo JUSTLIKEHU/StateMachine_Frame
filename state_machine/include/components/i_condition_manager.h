@@ -48,9 +48,9 @@ class IConditionManager : public IComponent {
   virtual ~IConditionManager() = default;
   virtual void SetConditionValue(const std::string& name, int value) = 0;
   virtual void GetConditionValue(const std::string& name, int& value) const = 0;
-  virtual bool CheckConditions(const std::vector<Condition>& conditions, const std::string& op,
-                               std::vector<ConditionInfo>& condition_infos) = 0;
-  virtual void AddCondition(const Condition& condition) = 0;
+  virtual bool CheckConditions(const std::vector<ConditionSharedPtr>& conditions,
+                               const std::string& op, std::vector<ConditionInfo>& condition_infos) = 0;
+  virtual void AddCondition(const ConditionSharedPtr& condition) = 0;
   // 新增：注册条件变化回调
   using ConditionChangeCallback = std::function<void(const std::string&, int, int, bool)>;
   virtual void RegisterConditionChangeCallback(ConditionChangeCallback callback) = 0;

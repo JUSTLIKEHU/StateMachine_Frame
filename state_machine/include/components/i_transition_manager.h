@@ -46,9 +46,9 @@ namespace smf {
 class ITransitionManager : public IComponent {
  public:
   virtual ~ITransitionManager() = default;
-  virtual bool AddTransition(const TransitionRule& rule) = 0;
+  virtual bool AddTransition(const TransitionRuleSharedPtr& rule) = 0;
   virtual bool FindTransition(const State& current_state, const EventPtr& event,
-                              std::vector<TransitionRule>& out_rules) = 0;
+                              std::vector<TransitionRuleSharedPtr>& out_rules) = 0;
   virtual void Clear() = 0;
 };
 
