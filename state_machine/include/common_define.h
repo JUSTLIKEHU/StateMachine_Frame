@@ -41,11 +41,16 @@
 
 #include <chrono>
 #include <map>
+#include <memory>
 #include <ostream>
 #include <string>
 #include <vector>
-#include <memory>
+
 namespace smf {
+
+// 前向声明
+class Event;
+using EventPtr = std::shared_ptr<Event>;
 
 // 定义内部事件
 inline constexpr const char* INTERNAL_EVENT = "__INTERNAL_EVENT__";
@@ -81,6 +86,7 @@ struct TransitionRule {
   State to;                                            // 目标状态
   std::vector<std::shared_ptr<Condition>> conditions;  // 条件列表
   std::string conditionsOperator;                      // 条件运算符 ("AND" 或 "OR")
+  int timeout{0};  // 状态转移超时时间(毫秒)，默认0表示不超时
 };
 
 // 状态信息
@@ -116,13 +122,22 @@ struct DurationCondition {
 
 // 添加事件定义结构体
 struct EventDefinition {
-  std::string name;                                    // 事件名称
-  std::string trigger_mode;                            // 触发模式：edge (边缘触发) 或 level (水平触发)
+  std::string name;          // 事件名称
+  std::string trigger_mode;  // 触发模式：edge (边缘触发) 或 level (水平触发)
   std::vector<std::shared_ptr<Condition>> conditions;  // 触发事件的条件列表
   std::string conditionsOperator;                      // 条件运算符 ("AND" 或 "OR")
 };
 
 using ConditionSharedPtr = std::shared_ptr<Condition>;
 using TransitionRuleSharedPtr = std::shared_ptr<TransitionRule>;
+
+// 添加待触发状态转移结构体
+struct PendingTransition {
+  TransitionRuleSharedPtr rule;                      // 转移规则
+  std::vector<std::string> triggerEvents;            // 触发事件
+  std::chrono::steady_clock::time_point createTime;  // 创建时间
+  std::chrono::steady_clock::time_point expiryTime;  // 超时时间
+  std::vector<ConditionInfo> unsatisfiedConditions;  // 未满足的条件信息
+};
 
 }  // namespace smf

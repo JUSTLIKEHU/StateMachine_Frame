@@ -50,6 +50,15 @@ class ITransitionManager : public IComponent {
   virtual bool FindTransition(const State& current_state, const EventPtr& event,
                               std::vector<TransitionRuleSharedPtr>& out_rules) = 0;
   virtual void Clear() = 0;
+
+  // 待触发状态转移管理
+  virtual bool AddPendingTransition(const TransitionRuleSharedPtr& rule, const EventPtr& event,
+                                    const std::vector<ConditionInfo>& unsatisfiedConditions) = 0;
+  virtual bool FindPendingTransition(const State& current_state, const EventPtr& event,
+                                     std::vector<TransitionRuleSharedPtr>& out_rules) = 0;
+  virtual void RemoveExpiredPendingTransitions() = 0;
+  virtual void RemovePendingTransition(const TransitionRuleSharedPtr& rule) = 0;
+  virtual void ClearPendingTransitions() = 0;
 };
 
 }  // namespace smf

@@ -1,0 +1,15 @@
+{
+  "name": "start_heating",
+  "trigger_mode": "edge",
+  "conditions": [
+    {
+      "name": "start_heating",
+      "range": [
+        1,
+        1
+      ],
+      "duration": 0
+    }
+  ],
+  "conditions_operator": "AND"
+} 

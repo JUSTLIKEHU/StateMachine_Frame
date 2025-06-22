@@ -71,6 +71,13 @@ class EventHandler : public IEventHandler {
   void TriggerStateTimeoutEvent(const State& state, int timeout);
   void PrintSatisfiedConditions(const std::vector<ConditionInfo>& condition_infos) const;
 
+  // 辅助方法
+  void ExecuteTransition(const State& current_state, const TransitionRuleSharedPtr& rule,
+                         const EventPtr& event);
+  void GetUnsatisfiedConditions(const std::vector<ConditionSharedPtr>& conditions,
+                                const std::string& op,
+                                std::vector<ConditionInfo>& unsatisfiedConditions);
+
  private:
   std::atomic_bool running_{false};
   std::queue<EventPtr> event_queue_;

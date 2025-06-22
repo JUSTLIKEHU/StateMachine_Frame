@@ -1,0 +1,15 @@
+{
+  "name": "increase_pressure",
+  "trigger_mode": "edge",
+  "conditions": [
+    {
+      "name": "increase_pressure",
+      "range": [
+        1,
+        1
+      ],
+      "duration": 0
+    }
+  ],
+  "conditions_operator": "AND"
+} 

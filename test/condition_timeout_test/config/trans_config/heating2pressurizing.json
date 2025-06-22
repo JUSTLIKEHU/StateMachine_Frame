@@ -1,0 +1,17 @@
+{
+  "from": "heating",
+  "to": "pressurizing",
+  "event": "increase_pressure",
+  "conditions": [
+    {
+      "name": "pressure",
+      "range": [
+        10,
+        50
+      ],
+      "duration": 0
+    }
+  ],
+  "conditions_operator": "AND",
+  "timeout": 2000
+} 

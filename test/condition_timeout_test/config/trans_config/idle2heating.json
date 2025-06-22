@@ -1,0 +1,17 @@
+{
+  "from": "idle",
+  "to": "heating",
+  "event": "start_heating",
+  "conditions": [
+    {
+      "name": "temperature",
+      "range": [
+        20,
+        100
+      ],
+      "duration": 0
+    }
+  ],
+  "conditions_operator": "AND",
+  "timeout": 2000
+} 

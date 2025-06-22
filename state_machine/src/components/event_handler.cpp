@@ -54,9 +54,8 @@ EventHandler::EventHandler(IStateManager* state_manager, IConditionManager* cond
   condition_manager_->RegisterConditionChangeCallback(
       std::bind(&EventHandler::TriggerEvent, this, std::placeholders::_1, std::placeholders::_2,
                 std::placeholders::_3, std::placeholders::_4));
-  state_manager_->RegisterStateTimeoutCallback(
-      std::bind(&EventHandler::TriggerStateTimeoutEvent, this, std::placeholders::_1,
-                std::placeholders::_2));
+  state_manager_->RegisterStateTimeoutCallback(std::bind(
+      &EventHandler::TriggerStateTimeoutEvent, this, std::placeholders::_1, std::placeholders::_2));
 }
 
 EventHandler::~EventHandler() { Stop(); }
@@ -110,42 +109,53 @@ void EventHandler::ProcessEvent(const EventPtr& event) {
 
   bool eventHandled = false;
   std::vector<TransitionRuleSharedPtr> rules;
-
-  // 查找可用的转换规则
-  if (transition_manager_->FindTransition(current_state, event, rules)) {
+  // 清理过期的待触发状态转移
+  transition_manager_->RemoveExpiredPendingTransitions();
+  // 首先检查待触发状态转移（优先级更高）
+  if (transition_manager_->FindPendingTransition(current_state, event, rules)) {
     for (const auto& rule : rules) {
       std::vector<ConditionInfo> condition_infos;
       if (condition_manager_->CheckConditions(rule->conditions, rule->conditionsOperator,
                                               condition_infos)) {
         PrintSatisfiedConditions(condition_infos);
-        // 获取状态层次结构
-        std::vector<State> exitStates;
-        std::vector<State> enterStates;
-        state_manager_->GetStateHierarchy(current_state, rule->to, exitStates, enterStates);
-
         // 执行状态转换
-        if (state_event_handler_) {
-          SMF_LOGI("Transition: " + current_state + " -> " + rule->to + " on event " +
-                   event->toString());
-          state_event_handler_->OnTransition(exitStates, event, enterStates);
-          state_event_handler_->OnExitState(exitStates);
-        }
-
-        // 更新当前状态
-        state_manager_->SetState(rule->to);
-
-        // 调用状态进入处理
-        if (state_event_handler_) {
-          state_event_handler_->OnEnterState(enterStates);
-        }
+        ExecuteTransition(current_state, rule, event);
         eventHandled = true;
+        transition_manager_->RemovePendingTransition(rule);
+        break;  // 找到匹配的待触发转移后立即执行
       }
     }
+    rules.clear();
+  }
 
-    // 事件回收处理
-    if (state_event_handler_) {
-      state_event_handler_->OnPostEvent(event, eventHandled);
+  // 如果没有处理待触发转移，则查找常规转换规则
+  if (!eventHandled && transition_manager_->FindTransition(current_state, event, rules)) {
+    for (const auto& rule : rules) {
+      std::vector<ConditionInfo> condition_infos;
+      if (condition_manager_->CheckConditions(rule->conditions, rule->conditionsOperator,
+                                              condition_infos)) {
+        PrintSatisfiedConditions(condition_infos);
+        // 执行状态转换
+        ExecuteTransition(current_state, rule, event);
+        eventHandled = true;
+        break;
+      } else if (rule->timeout > 0) {
+        // 如果条件不满足但配置了timeout，添加到待触发状态转移
+        std::vector<ConditionInfo> unsatisfiedConditions;
+        // 获取未满足的条件信息
+        GetUnsatisfiedConditions(rule->conditions, rule->conditionsOperator, unsatisfiedConditions);
+
+        if (transition_manager_->AddPendingTransition(rule, event, unsatisfiedConditions)) {
+          SMF_LOGI("Added pending transition for rule: " + rule->from + " -> " + rule->to +
+                   " with timeout " + std::to_string(rule->timeout) + "ms");
+        }
+      }
     }
+  }
+
+  // 事件回收处理
+  if (state_event_handler_) {
+    state_event_handler_->OnPostEvent(event, eventHandled);
   }
 }
 
@@ -230,6 +240,54 @@ void EventHandler::PrintSatisfiedConditions(
     SMF_LOGD(std::string("SatisfiedCondition: condition_name: ") + condition_info.name + ", " +
              "condition_value: " + std::to_string(condition_info.value) + ", " +
              "condition_duration: " + std::to_string(condition_info.duration));
+  }
+}
+
+void EventHandler::ExecuteTransition(const State& current_state,
+                                     const TransitionRuleSharedPtr& rule, const EventPtr& event) {
+  // 获取状态层次结构
+  std::vector<State> exitStates;
+  std::vector<State> enterStates;
+  state_manager_->GetStateHierarchy(current_state, rule->to, exitStates, enterStates);
+
+  // 执行状态转换
+  if (state_event_handler_) {
+    SMF_LOGI("Transition: " + current_state + " -> " + rule->to + " on event " + event->toString());
+    state_event_handler_->OnTransition(exitStates, event, enterStates);
+    state_event_handler_->OnExitState(exitStates);
+  }
+
+  // 更新当前状态
+  state_manager_->SetState(rule->to);
+
+  // 调用状态进入处理
+  if (state_event_handler_) {
+    state_event_handler_->OnEnterState(enterStates);
+  }
+}
+
+void EventHandler::GetUnsatisfiedConditions(const std::vector<ConditionSharedPtr>& conditions,
+                                            const std::string& op,
+                                            std::vector<ConditionInfo>& unsatisfiedConditions) {
+  (void)op;
+  unsatisfiedConditions.clear();
+
+  for (const auto& cond : conditions) {
+    int value = 0;
+    condition_manager_->GetConditionValue(cond->name, value);
+
+    bool valueInRange = false;
+    // 检查值是否在任何范围内
+    for (const auto& range : cond->range_values) {
+      if (value >= range.first && value <= range.second) {
+        valueInRange = true;
+        break;
+      }
+    }
+
+    if (!valueInRange) {
+      unsatisfiedConditions.push_back({cond->name, value, 0});
+    }
   }
 }
 

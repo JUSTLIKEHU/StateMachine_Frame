@@ -60,6 +60,15 @@ class TransitionManager : public ITransitionManager {
                       std::vector<TransitionRuleSharedPtr>& out_rules) override;
   void Clear() override;
 
+  // 待触发状态转移管理
+  bool AddPendingTransition(const TransitionRuleSharedPtr& rule, const EventPtr& event,
+                            const std::vector<ConditionInfo>& unsatisfiedConditions) override;
+  bool FindPendingTransition(const State& current_state, const EventPtr& event,
+                             std::vector<TransitionRuleSharedPtr>& out_rules) override;
+  void RemoveExpiredPendingTransitions() override;
+  void RemovePendingTransition(const TransitionRuleSharedPtr& rule) override;
+  void ClearPendingTransitions() override;
+
  private:
   // 使用状态ID和事件类型作为键的复合键结构
   struct TransitionKey {
@@ -82,8 +91,12 @@ class TransitionManager : public ITransitionManager {
   // 存储转换规则
   std::unordered_multimap<TransitionKey, TransitionRuleSharedPtr, TransitionKeyHash> transitions_;
 
+  // 存储待触发状态转移
+  std::vector<PendingTransition> pending_transitions_;
+
   // 使用共享互斥锁实现读写锁
   mutable std::shared_mutex mutex_;
+  mutable std::shared_mutex pending_mutex_;
   std::atomic_bool running_{false};
 };
 

@@ -35,6 +35,8 @@
 
 #include "components/transition_manager.h"
 
+#include <algorithm>
+
 #include "common_define.h"
 #include "logger.h"
 
@@ -111,6 +113,116 @@ void TransitionManager::Clear() {
     std::unique_lock<std::shared_mutex> lock(mutex_);
     transitions_.clear();
     SMF_LOGI("Cleared all transition rules");
+  }
+}
+
+bool TransitionManager::AddPendingTransition(
+    const TransitionRuleSharedPtr& rule, const EventPtr& event,
+    const std::vector<ConditionInfo>& unsatisfiedConditions) {
+  if (!running_) {
+    SMF_LOGE("TransitionManager is not running");
+    return false;
+  }
+
+  if (rule->timeout <= 0) {
+    SMF_LOGW("Cannot add pending transition without timeout configuration");
+    return false;
+  }
+
+  auto now = std::chrono::steady_clock::now();
+  auto expiryTime = now + std::chrono::milliseconds(rule->timeout);
+
+  PendingTransition pendingTransition{
+      rule, {event->GetName(), INTERNAL_EVENT}, now, expiryTime, unsatisfiedConditions};
+
+  {
+    std::unique_lock<std::shared_mutex> lock(pending_mutex_);
+    pending_transitions_.push_back(std::move(pendingTransition));
+
+    std::string log_msg = "Added pending transition: " + rule->from + " -> " + rule->to +
+                          " on event " + event->GetName() + " with timeout " +
+                          std::to_string(rule->timeout) + "ms";
+    SMF_LOGI(log_msg);
+  }
+
+  return true;
+}
+
+bool TransitionManager::FindPendingTransition(const State& current_state, const EventPtr& event,
+                                              std::vector<TransitionRuleSharedPtr>& out_rules) {
+  if (!running_) {
+    SMF_LOGE("TransitionManager is not running");
+    return false;
+  }
+
+  {
+    std::shared_lock<std::shared_mutex> lock(pending_mutex_);
+    for (const auto& pending : pending_transitions_) {
+      if (pending.rule->from == current_state) {
+        // 检查事件是否匹配
+        bool eventMatches = false;
+        for (const auto& ruleEvent : pending.triggerEvents) {
+          if (ruleEvent == event->GetName()) {
+            eventMatches = true;
+            break;
+          }
+        }
+
+        if (eventMatches) {
+          out_rules.push_back(pending.rule);
+        }
+      }
+    }
+  }
+
+  return !out_rules.empty();
+}
+
+void TransitionManager::RemoveExpiredPendingTransitions() {
+  if (!running_) {
+    return;
+  }
+
+  auto now = std::chrono::steady_clock::now();
+
+  {
+    std::unique_lock<std::shared_mutex> lock(pending_mutex_);
+    auto it = std::remove_if(
+        pending_transitions_.begin(), pending_transitions_.end(),
+        [now](const PendingTransition& pending) { return now >= pending.expiryTime; });
+
+    if (it != pending_transitions_.end()) {
+      size_t removedCount = std::distance(it, pending_transitions_.end());
+      pending_transitions_.erase(it, pending_transitions_.end());
+      SMF_LOGI("Removed " + std::to_string(removedCount) + " expired pending transitions");
+    }
+  }
+}
+
+void TransitionManager::RemovePendingTransition(const TransitionRuleSharedPtr& rule) {
+  if (!running_) {
+    return;
+  }
+
+  {
+    std::unique_lock<std::shared_mutex> lock(pending_mutex_);
+    pending_transitions_.erase(
+        std::remove_if(pending_transitions_.begin(), pending_transitions_.end(),
+                       [rule](const PendingTransition& pending) { return pending.rule == rule; }),
+        pending_transitions_.end());
+    SMF_LOGI("Removed pending transition: " + rule->from + " -> " + rule->to);
+  }
+}
+
+void TransitionManager::ClearPendingTransitions() {
+  if (!running_) {
+    return;
+  }
+
+  {
+    std::unique_lock<std::shared_mutex> lock(pending_mutex_);
+    pending_transitions_.clear();
+    SMF_LOGI("Cleared all pending transitions");
   }
 }
 

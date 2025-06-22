@@ -296,6 +296,14 @@ bool ConfigLoader::ValidateTransitionConfig(const json& config) const {
       }
     }
 
+    // 验证timeout字段
+    if (config.contains("timeout")) {
+      if (!config["timeout"].is_number() || config["timeout"].get<int>() < 0) {
+        SMF_LOGE("Invalid 'timeout' in transition config - must be a non-negative number");
+        return false;
+      }
+    }
+
     return true;
   } catch (const json::exception& e) {
     SMF_LOGE("JSON error in transition config: " + std::string(e.what()));
@@ -390,7 +398,7 @@ bool ConfigLoader::ParseTransitionConfig(const json& config) {
     TransitionRuleSharedPtr rule = std::make_shared<TransitionRule>();
     rule->from = config["from"];
     rule->to = config["to"];
-    
+
     // 处理事件字段
     if (config.contains("event")) {
       if (config["event"].is_string()) {
@@ -416,8 +424,11 @@ bool ConfigLoader::ParseTransitionConfig(const json& config) {
                " , use INTERNAL_EVENT as default");
       rule->events.push_back(INTERNAL_EVENT);
     }
-    
+
     rule->conditionsOperator = config.value("conditions_operator", "AND");
+
+    // 解析timeout字段
+    rule->timeout = config.value("timeout", 0);
 
     if (state_names_.find(rule->from) == state_names_.end() ||
         state_names_.find(rule->to) == state_names_.end()) {

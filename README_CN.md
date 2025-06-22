@@ -21,6 +21,7 @@
 - **JSON配置**：从JSON文件加载状态机配置。
 - **基于时间的条件**：支持需要满足特定持续时间的条件。
 - **状态超时机制**：可以为状态定义超时时间，当状态持续时间超过指定值时触发超时事件。
+- **转换超时机制**：支持转换规则超时，处理条件暂时不满足的情况。
 - **灵活的回调机制**：支持lambda函数和类成员函数作为回调。
 - **完整的状态层次结构**：在回调中提供完整的状态层次信息。
 - **集成日志系统**：具有多种日志级别的线程安全日志系统。
@@ -32,6 +33,8 @@
 - **工厂模式支持**：通过集中式工厂创建和管理多个状态机。
 - **命名状态机**：支持创建和管理多个具名状态机。
 - **单例工厂管理**：集中管理所有状态机实例。
+- **日志系统优化**：异步日志记录、日志消息队列、日志文件轮转、可配置的日志级别
+- **内存管理优化**：对象池、智能指针、移动语义
 
 ---
 
@@ -85,7 +88,7 @@ StateMachine_Frame/
 │   │       └── config_loader.h        # 配置加载器实现
 │   └── src/                  # 源文件
 │       ├── state_machine.cpp # 主实现文件
-|       ├── state_machine_factory.cpp # 状态机工厂
+│       ├── state_machine_factory.cpp # 状态机工厂
 │       └── components/       # 组件实现
 │           ├── condition_manager.cpp  # 条件管理器实现
 │           ├── state_manager.cpp      # 状态管理器实现
@@ -118,14 +121,38 @@ StateMachine_Frame/
 │   ├── multi_range_conditions/ # 多维范围条件测试
 │   │   ├── CMakeLists.txt      # 测试构建配置
 │   │   └── test_multi_range_conditions.cpp # 多范围条件测试
-│   └── state_timeout/        # 状态超时测试
-│       ├── CMakeLists.txt    # 测试构建配置 
-│       ├── state_timeout_test.cpp # 状态超时测试
+│   ├── state_timeout/        # 状态超时测试
+│   │   ├── CMakeLists.txt    # 测试构建配置 
+│   │   ├── state_timeout_test.cpp # 状态超时测试
+│   │   └── config/           # 测试配置
+│   │       ├── state_config.json       # 状态配置（带超时）
+│   │       └── trans_config/           # 转换配置
+│   │           ├── init_to_working.json    # 初始化到工作转换
+│   │           ├── working_to_waiting.json # 工作到等待转换
+│   │           ├── working_to_longwait.json # 工作到长等待转换
+│   │           ├── wait_timeout.json       # 等待超时转换
+│   │           ├── longwait_timeout.json   # 长等待超时转换
+│   │           └── completed_to_working.json # 完成到工作转换
+│   └── condition_timeout_test/ # 条件超时测试
+│       ├── CMakeLists.txt    # 测试构建配置
+│       ├── main.cpp          # 条件超时测试
 │       └── config/           # 测试配置
-└── third_party/              # 外部依赖
-    └── nlohmann-json/        # JSON库
-        ├── json_fwd.hpp      # 前向声明
-        └── json.hpp          # JSON实现
+│           ├── state_config.json       # 状态配置
+│           ├── event_generate_config/  # 事件生成配置
+│           │   ├── start_heating.json      # 开始加热事件
+│           │   └── increase_pressure.json  # 增加压力事件
+│           └── trans_config/           # 转换配置
+│               ├── idle2heating.json          # 空闲到加热转换
+│               ├── heating2pressurizing.json  # 加热到加压转换
+│               └── pressurizing2ready.json    # 加压到就绪转换
+├── third_party/              # 外部依赖
+│   └── nlohmann-json/        # JSON库
+│       ├── json_fwd.hpp      # 前向声明
+│       └── json.hpp          # JSON实现
+├── utils/                    # 工具文件（目前为空）
+├── .clang-format            # 代码格式化配置
+├── .gitignore               # Git忽略规则
+└── .vscode/                 # VSCode配置（可选）
 ```
 
 ## 代码结构
@@ -210,6 +237,14 @@ class ITransitionManager : public IComponent {
                             std::vector<TransitionRule>& out_rules) = 0;
   // 清除所有转换规则
   virtual void Clear() = 0;
+  // 添加待处理转换
+  virtual bool AddPendingTransition(const TransitionRuleSharedPtr& rule, 
+                                  const EventPtr& event,
+                                  const std::vector<ConditionInfo>& unsatisfied_conditions) = 0;
+  // 查找待处理转换
+  virtual bool FindPendingTransition(const State& current_state, 
+                                   const EventPtr& event,
+                                   std::vector<TransitionRuleSharedPtr>& out_rules) = 0;
 };
 ```
 
@@ -279,6 +314,7 @@ class IConfigLoader : public IComponent {
     State to;                           // 目标状态
     std::vector<Condition> conditions;  // 条件列表
     std::string conditionsOperator;     // 条件运算符 ("AND" 或 "OR")
+    int timeout{0};                     // 转换超时时间(毫秒)，默认0表示不超时
   };
   ```
 
@@ -321,7 +357,18 @@ class IConfigLoader : public IComponent {
   };
   ```
 
-11. **状态事件处理器**
+11. **待处理转换**
+  ```cpp
+  struct PendingTransition {
+    TransitionRuleSharedPtr rule;                      // 转换规则
+    std::vector<std::string> triggerEvents;            // 触发事件
+    std::chrono::steady_clock::time_point createTime;  // 创建时间
+    std::chrono::steady_clock::time_point expiryTime;  // 超时时间
+    std::vector<ConditionInfo> unsatisfiedConditions;  // 未满足的条件信息
+  };
+  ```
+
+12. **状态事件处理器**
   ```cpp
   class StateEventHandler {
   public:
@@ -372,7 +419,7 @@ class IConfigLoader : public IComponent {
   - 接收完整的状态层次结构而非单个状态
   - 能够在知道整个状态上下文的情况下处理转换
 
-12. **有限状态机类**
+13. **有限状态机类**
   - 管理状态机的核心类：
     - 初始化：从JSON文件或分离的配置文件加载配置
     - 事件处理：使用专用互斥锁异步处理事件
@@ -382,7 +429,7 @@ class IConfigLoader : public IComponent {
     - 定时器管理：使用定时器互斥锁处理基于时间的（持续）条件
     - 事件触发：使用专用互斥锁处理事件触发
 
-13. **日志记录器类**
+14. **日志记录器类**
   ```cpp
   class Logger {
   public:
@@ -496,7 +543,17 @@ auto all_fsms = StateMachineFactory::GetAllStateMachines();
       "duration": 1000
     }
   ],
-  "conditions_operator": "OR"
+  "conditions_operator": "OR",
+  "timeout": 5000
+}
+```
+
+##### 状态超时转换 (trans_config/waiting_timeout.json)
+```json
+{
+  "from": "WAITING",
+  "event": "__STATE_TIMEOUT_EVENT__",
+  "to": "COMPLETED"
 }
 ```
 
@@ -580,6 +637,9 @@ int main() {
                               const EventPtr& event,
                               const std::vector<State>& toStates) {
      // 处理状态转换
+     if (event->GetName() == smf::STATE_TIMEOUT_EVENT) {
+       std::cout << "状态超时发生！" << std::endl;
+     }
    });
    
    // 方式1：使用单一配置文件初始化
@@ -603,6 +663,13 @@ int main() {
    // 触发事件和条件
    fsm->HandleEvent(std::make_shared<Event>("turn_on"));
    fsm->SetConditionValue("power", 50);
+
+   // 测试超时功能
+   std::cout << "当前状态: " << fsm->GetCurrentState() << std::endl;
+   
+   // 等待潜在的超时事件
+   std::this_thread::sleep_for(std::chrono::seconds(6));
+   std::cout << "超时后的状态: " << fsm->GetCurrentState() << std::endl;
 
    // 停止状态机
    fsm->Stop();
@@ -675,9 +742,12 @@ SMF_LOGE("这是一条错误信息");
 - 演示在非连续值范围内的条件匹配
 
 ### 状态超时测试
-专门用于测试状态超时功能的测试：
-- 测试状态超时机制
-- 验证状态超时后的处理逻辑
+专门用于测试状态超时机制的测试：
+- 测试不同超时值的状态超时功能
+- 验证当状态超过其超时持续时间时触发`__STATE_TIMEOUT_EVENT__`
+- 测试由超时事件触发的状态转换
+- 演示不同状态场景下的超时处理
+- 验证超时回调机制
 
 ### 多事件测试
 专门用于测试多事件触发功能的测试：
@@ -685,6 +755,14 @@ SMF_LOGE("这是一条错误信息");
 - 验证不同事件触发相同转换的行为
 - 测试事件处理的优先级和顺序
 - 包含条件检查和状态转换的完整流程测试
+
+### 条件超时测试
+专门用于测试条件超时功能的测试：
+- 测试转换规则超时功能
+- 演示条件暂时不满足时的待处理转换管理
+- 测试条件在超时时间内满足时的超时行为
+- 验证条件持续不满足时的超时到期
+- 测试条件超时与状态机逻辑的集成
 
 ---
 
@@ -1277,7 +1355,13 @@ graph TD
    - 专门处理状态的超时检测
    - 当状态超时时，通过回调通知事件处理器
 
-4. **日志处理线程 (Logger Thread)**
+4. **转换管理器线程 (TransitionManager Thread)**
+   - 管理等待条件满足的待处理转换
+   - 处理具有超时配置的转换规则的超时逻辑
+   - 清理过期的待处理转换
+   - 与条件管理器协调进行待处理转换评估
+
+5. **日志处理线程 (Logger Thread)**
    - 专门处理日志消息的异步记录
    - 管理日志文件的轮转
    - 确保日志操作不阻塞主业务逻辑
@@ -1309,6 +1393,8 @@ graph TD
 
 4. **转换管理器 (TransitionManager)**
    - `std::mutex rules_mutex_`：保护转换规则集合的访问
+   - `std::shared_mutex pending_mutex_`：使用读写锁保护待处理转换集合，提高性能
+   - `std::mutex pending_cleanup_mutex_`：保护待处理转换清理操作
 
 5. **日志系统 (Logger)**
    - `std::mutex log_mutex_`：保护日志操作
@@ -1342,12 +1428,13 @@ graph TD
    - 条件变化通知机制避免了不必要的轮询
    - 智能条件触发：仅在条件值变化时才重新评估相关事件定义
    - 支持不同的事件触发模式（边缘触发vs水平触发），优化事件生成频率
+   - 待处理转换管理优化处理暂时不满足条件的情况
 
-5. **日志系统优化**
-   - 异步日志记录：日志操作在专用线程中执行，不阻塞业务逻辑
-   - 日志消息队列：使用无锁队列或细粒度锁减少日志记录的性能影响
-   - 日志文件轮转：自动管理日志文件大小，避免单个文件过大影响I/O性能
-   - 可配置的日志级别：运行时可调整日志详细程度，平衡信息丰富度和性能开销
+5. **超时处理优化**
+   - 状态超时处理使用专用线程和条件变量实现精确计时
+   - 转换超时管理使用高效数据结构跟踪待处理转换
+   - 仅在必要时生成超时事件，避免不必要的处理开销
+   - 高效执行过期待处理转换的清理，防止内存泄漏
 
 6. **内存管理优化**
    - 对象池：重用事件对象，减少内存分配开销

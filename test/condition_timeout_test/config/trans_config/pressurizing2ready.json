@@ -1,0 +1,24 @@
+{
+  "from": "pressurizing",
+  "to": "ready",
+  "event": "__INTERNAL_EVENT__",
+  "conditions": [
+    {
+      "name": "temperature",
+      "range": [
+        20,
+        100
+      ],
+      "duration": 0
+    },
+    {
+      "name": "pressure",
+      "range": [
+        10,
+        50
+      ],
+      "duration": 0
+    }
+  ],
+  "conditions_operator": "AND"
+} 

@@ -21,6 +21,7 @@ This is a C++ implementation of a **Finite State Machine (FSM)** that supports e
 - **JSON Configuration**: Load state machine configurations from JSON files.
 - **Time-Based Conditions**: Support for conditions that require a specific duration to be met.
 - **State Timeout Mechanism**: Ability to define timeout for states, triggering a timeout event when a state exceeds its specified duration.
+- **Transition Timeout Mechanism**: Support for transition rule timeout, handling cases where conditions are temporarily not satisfied.
 - **Flexible Callback Mechanism**: Support for lambda functions and class member functions as callbacks.
 - **Complete State Hierarchy**: Provide complete state hierarchy information in callbacks.
 - **Integrated Logging System**: A thread-safe logging system with multiple log levels.
@@ -118,10 +119,30 @@ StateMachine_Frame/
 │   ├── multi_range_conditions/ # Multi-dimensional range condition tests
 │   │   ├── CMakeLists.txt      # Test build configuration
 │   │   └── test_multi_range_conditions.cpp # Multi-range condition test
-│   └── state_timeout/        # State timeout tests
-│       ├── CMakeLists.txt    # Test build configuration 
-│       ├── state_timeout_test.cpp # State timeout test
+│   ├── state_timeout/        # State timeout tests
+│   │   ├── CMakeLists.txt    # Test build configuration 
+│   │   ├── state_timeout_test.cpp # State timeout test
+│   │   └── config/           # Test configurations
+│   │       ├── state_config.json       # State configuration with timeout
+│   │       └── trans_config/           # Transition configurations
+│   │           ├── init_to_working.json    # Init to working transition
+│   │           ├── working_to_waiting.json # Working to waiting transition
+│   │           ├── working_to_longwait.json # Working to long wait transition
+│   │           ├── wait_timeout.json       # Waiting timeout transition
+│   │           ├── longwait_timeout.json   # Long wait timeout transition
+│   │           └── completed_to_working.json # Completed to working transition
+│   └── condition_timeout_test/ # Condition timeout tests
+│       ├── CMakeLists.txt    # Test build configuration
+│       ├── main.cpp          # Condition timeout test
 │       └── config/           # Test configurations
+│           ├── state_config.json       # State configuration
+│           ├── event_generate_config/  # Event generation configs
+│           │   ├── start_heating.json      # Start heating event
+│           │   └── increase_pressure.json  # Increase pressure event
+│           └── trans_config/           # Transition configurations
+│               ├── idle2heating.json          # Idle to heating transition
+│               ├── heating2pressurizing.json  # Heating to pressurizing transition
+│               └── pressurizing2ready.json    # Pressurizing to ready transition
 └── third_party/              # External dependencies
     └── nlohmann-json/        # JSON library
         ├── json_fwd.hpp      # Forward declarations
@@ -210,6 +231,14 @@ class ITransitionManager : public IComponent {
                             std::vector<TransitionRule>& out_rules) = 0;
   // Clear all transition rules
   virtual void Clear() = 0;
+  // Add pending transition
+  virtual bool AddPendingTransition(const TransitionRuleSharedPtr& rule, 
+                                  const EventPtr& event,
+                                  const std::vector<ConditionInfo>& unsatisfied_conditions) = 0;
+  // Find pending transition
+  virtual bool FindPendingTransition(const State& current_state, 
+                                   const EventPtr& event,
+                                   std::vector<TransitionRuleSharedPtr>& out_rules) = 0;
 };
 ```
 
@@ -271,24 +300,25 @@ class IConfigLoader : public IComponent {
   };
   ```
 
-6. **Transition Rule**
+6. **State Transition Rules**
   ```cpp
   struct TransitionRule {
-    State from;                         // Source state
-    std::vector<std::string> events;    // Triggering event list (can be empty)
+    State from;                         // Starting state
+    std::vector<std::string> events;    // Event list (can be empty)
     State to;                           // Target state
-    std::vector<Condition> conditions;  // List of conditions
+    std::vector<Condition> conditions;  // Condition list
     std::string conditionsOperator;     // Condition operator ("AND" or "OR")
+    int timeout{0};                     // Transition timeout in milliseconds, default 0 means no timeout
   };
   ```
 
-7. **State Info**
+7. **State Information**
   ```cpp
   struct StateInfo {
     State name;                   // State name
     State parent;                 // Parent state name (can be empty)
-    std::vector<State> children;  // Child states list
-    int timeout{0};               // Timeout in milliseconds, default 0 means no timeout
+    std::vector<State> children;  // Child state list
+    int timeout{0};               // State timeout in milliseconds, default 0 means no timeout
   };
   ```
 
@@ -305,23 +335,34 @@ class IConfigLoader : public IComponent {
   ```cpp
   struct DurationCondition {
     std::string name;
-    int value;        // Value at the time of triggering
-    int duration;     // Duration in milliseconds
+    int value;        // Value when condition was triggered
+    int duration;     // Duration time in milliseconds
     std::chrono::steady_clock::time_point expiryTime;
   };
   ```
 
-10. **State Timeout Info**
+10. **State Timeout Information**
   ```cpp
   struct StateTimeoutInfo {
     State state;                                      // State name
-    int timeout;                                      // Timeout in milliseconds
-    std::chrono::steady_clock::time_point enterTime;  // Time when entered the state
+    int timeout;                                      // Timeout duration in milliseconds
+    std::chrono::steady_clock::time_point enterTime;  // Time when state was entered
     std::chrono::steady_clock::time_point expiryTime; // Time when timeout will occur
   };
   ```
 
-11. **State Event Handler**
+11. **Pending Transition**
+  ```cpp
+  struct PendingTransition {
+    TransitionRuleSharedPtr rule;                      // Transition rule
+    std::vector<std::string> triggerEvents;            // Trigger events
+    std::chrono::steady_clock::time_point createTime;  // Creation time
+    std::chrono::steady_clock::time_point expiryTime;  // Timeout time
+    std::vector<ConditionInfo> unsatisfiedConditions;  // Unsatisfied condition information
+  };
+  ```
+
+12. **State Event Handler**
   ```cpp
   class StateEventHandler {
   public:
@@ -372,7 +413,7 @@ class IConfigLoader : public IComponent {
   - Receives complete state hierarchies rather than single states
   - Enables handling transitions with knowledge of the entire state context
 
-12. **Finite State Machine Class**
+13. **Finite State Machine Class**
   - Core class for managing the state machine:
     - Initialization: Load configuration from a JSON file or separate configuration files
     - Event Handling: Process events asynchronously with dedicated mutex
@@ -382,7 +423,7 @@ class IConfigLoader : public IComponent {
     - Timer Management: Handle time-based (duration) conditions with timer mutex protection
     - Event Triggering: Dedicated event trigger handling with separate mutex
 
-13. **Logger Class**
+14. **Logger Class**
   ```cpp
   class Logger {
   public:
@@ -445,7 +486,8 @@ States and transitions can be defined programmatically or loaded from a JSON fil
     {"name": "STAND_BY", "parent": "ON"},
     {"name": "ACTIVE", "parent": "ON"},
     {"name": "PAUSED", "parent": "ON"},
-    {"name": "WAITING", "parent": "ON", "timeout": 5000}
+    {"name": "WAITING", "parent": "ON", "timeout": 5000},
+    {"name": "ERROR", "timeout": 3000}
   ],
   "initial_state": "OFF"
 }
@@ -496,7 +538,17 @@ States and transitions can be defined programmatically or loaded from a JSON fil
       "duration": 1000
     }
   ],
-  "conditions_operator": "OR"
+  "conditions_operator": "OR",
+  "timeout": 5000
+}
+```
+
+##### State Timeout Transition (trans_config/waiting_timeout.json)
+```json
+{
+  "from": "WAITING",
+  "event": "__STATE_TIMEOUT_EVENT__",
+  "to": "COMPLETED"
 }
 ```
 
@@ -572,23 +624,26 @@ public:
 ### 3. Initialize and Run the State Machine
 ```cpp
 int main() {
-   // Create a state machine using factory
+   // Create state machine using factory
    auto fsm = smf::StateMachineFactory::CreateStateMachine("main_fsm");
    
    // Set state event handler callbacks
    fsm->SetTransitionCallback([](const std::vector<State>& fromStates, 
                               const EventPtr& event,
                               const std::vector<State>& toStates) {
-     // Handle state transition
+     // Handle state transitions
+     if (event->GetName() == smf::STATE_TIMEOUT_EVENT) {
+       std::cout << "State timeout occurred!" << std::endl;
+     }
    });
    
-   // Option 1: Initialize with a single configuration file
-   fsm->Init("config.json"); 
+   // Method 1: Initialize with single configuration file
+   fsm->Init("config.json");
    
-   // Option 2: Initialize with separate configuration files
+   // Method 2: Initialize with separate configuration files
    fsm->Init("state_config.json", "event_generate_config_dir", "trans_config_dir");
    
-   // Start state machine
+   // Start the state machine
    fsm->Start();
 
    // Get state machine by name
@@ -604,7 +659,14 @@ int main() {
    fsm->HandleEvent(std::make_shared<Event>("turn_on"));
    fsm->SetConditionValue("power", 50);
 
-   // Stop state machine
+   // Test timeout functionality
+   std::cout << "Current state: " << fsm->GetCurrentState() << std::endl;
+   
+   // Wait for potential timeout events
+   std::this_thread::sleep_for(std::chrono::seconds(6));
+   std::cout << "State after timeout: " << fsm->GetCurrentState() << std::endl;
+
+   // Stop the state machine
    fsm->Stop();
    return 0;
 }
@@ -645,6 +707,9 @@ The project includes multiple test examples that can be run using the provided s
 # Run state timeout test
 ./run_test.sh timeout
 
+# Run condition timeout test
+./run_test.sh timeout2
+
 # Run multi-event test
 ./run_test.sh event
 
@@ -675,11 +740,22 @@ A specialized test for the multi-dimensional range condition feature:
 - Demonstrating condition matching in non-contiguous value ranges
 
 ### State Timeout Test
-A specialized test for the state timeout feature:
-- Testing state timeout logic and its integration with the state machine
-- Demonstrating state timeout handling in different scenarios
+A specialized test for the state timeout mechanism:
+- Testing state timeout functionality with different timeout values
+- Verifying that `__STATE_TIMEOUT_EVENT__` is triggered when states exceed their timeout duration
+- Testing state transitions triggered by timeout events
+- Demonstrating timeout handling in different state scenarios
+- Validating timeout callback mechanisms
 
-### Multi-event Test
+### Condition Timeout Test
+A specialized test for the condition timeout feature:
+- Testing transition rule timeout functionality
+- Demonstrating pending transition management when conditions are temporarily not satisfied
+- Testing timeout behavior when conditions become satisfied within the timeout period
+- Verifying timeout expiration when conditions remain unsatisfied
+- Testing integration between condition timeout and state machine logic
+
+### Multi-Event Test
 A specialized test for the multi-event triggering feature:
 - Testing support for multiple trigger events in a single transition rule
 - Verifying behavior of different events triggering the same transition
@@ -1037,7 +1113,6 @@ void SetLogFileRolling(size_t max_file_size, int max_backup_index);
 // Shut down the logger and release resources
 void Shutdown();
 ```
-
 #### Logging Macros
 ```cpp
 // Initialize logging system
@@ -1110,59 +1185,68 @@ smf::Logger::GetInstance().Shutdown();
 
 ## State Machine Processing Flow
 
-### Component Interactions
+### Component Interaction
 
-The different components of the state machine interact through well-defined interfaces to form a collaborative system:
+The state machine's components interact through well-defined interfaces, forming a collaborative system:
 
 ```mermaid
 graph TD
-    Core[State Machine Core<br>FiniteStateMachine] -- Initializes --> CL[Config Loader<br>ConfigLoader]
-    Core -- Initializes --> SM[State Manager<br>StateManager]
-    Core -- Initializes --> CM[Condition Manager<br>ConditionManager]
-    Core -- Initializes --> TM[Transition Manager<br>TransitionManager]
-    Core -- Initializes --> EH[Event Handler<br>EventHandler]
+    Core[State Machine Core<br>FiniteStateMachine] -- Initialize --> CL[Config Loader<br>ConfigLoader]
+    Core -- Initialize --> SM[State Manager<br>StateManager]
+    Core -- Initialize --> CM[Condition Manager<br>ConditionManager]
+    Core -- Initialize --> TM[Transition Manager<br>TransitionManager]
+    Core -- Initialize --> EH[Event Handler<br>EventHandler]
     
-    CL -- Loads state config --> SM
-    CL -- Loads condition config --> CM
-    CL -- Loads transition rules --> TM
+    CL -- Load State Config --> SM
+    CL -- Load Condition Config --> CM
+    CL -- Load Transition Rules --> TM
     
     User1[User] -- SetConditionValue --> CM
     User2[User] -- HandleEvent --> EH
     
-    CM -- Condition change notification --> EH
-    SM -- State timeout notification --> EH
+    CM -- Condition Change Notification --> EH
+    SM -- State Timeout Notification --> EH
+    TM -- Pending Transition Management --> EH
     
-    EH -- Find transition rules --> TM
-    EH -- Check conditions --> CM
-    EH -- Get/Set state --> SM
+    EH -- Find Transition Rules --> TM
+    EH -- Check Conditions --> CM
+    EH -- Get/Set State --> SM
     
-    EH -- Call callbacks --> SEH[State Event Handler]
+    EH -- Call Callbacks --> SEH[State Event Handler]
 ```
 
-### Component Processing Flows
+### Component Processing Flow
 
-1. **Configuration Loading Process**
-   - Load state configuration: Parse state definitions and their parent-child relationships, initial state, etc.
-   - Load event generation configuration: Parse event definitions and their triggering conditions
-   - Load transition rule configuration: Parse state transition rules
+1. **Configuration Loading Flow**
+   - Load state configuration: Parse state definitions, parent-child relationships, initial state, and timeout settings
+   - Load event generation configuration: Parse event definitions and their trigger conditions
+   - Load transition rule configuration: Parse state transition rules including timeout configurations
    - Validate configuration validity and consistency
 
-2. **Event Handling Process**
+2. **Event Processing Flow**
 ```mermaid
 graph TD
-    Start[Receive Event] --> PreProcess["Event Pre-processing<br>(OnPreEvent)"]
-    PreProcess -- Pre-process passed --> FindRules["Find Transition Rules<br>(TransitionManager)"]
-    PreProcess -- Pre-process rejected --> End[End]
+    Start[Receive Event] --> PreProcess["Event Preprocessing<br>(OnPreEvent)"]
+    PreProcess -- Preprocessing Passed --> FindRules["Find Transition Rules<br>(TransitionManager)"]
+    PreProcess -- Preprocessing Rejected --> End[End]
     
-    FindRules -- Rules found --> CheckCond["Check Conditions<br>(ConditionManager)"]
-    FindRules -- No rules found --> End
+    FindRules -- Rules Found --> CheckCond["Check Conditions<br>(ConditionManager)"]
+    FindRules -- No Rules Found --> CheckPending["Check Pending Transitions<br>(TransitionManager)"]
+    FindRules -- No Rules Found --> End
     
-    CheckCond -- Conditions satisfied --> TransCallback["Trigger Transition Callback<br>(OnTransition)"]
-    CheckCond -- Conditions not satisfied --> End
+    CheckCond -- Conditions Satisfied --> TransCallback["Trigger Transition Callback<br>(OnTransition)"]
+    CheckCond -- Conditions Not Satisfied --> CheckTimeout{"Has Timeout?"}
     
-    TransCallback --> ExitStates["Exit Current States<br>(OnExitState)"]
+    CheckTimeout -- Yes --> AddPending["Add Pending Transition<br>(TransitionManager)"]
+    CheckTimeout -- No --> End
+    AddPending --> End
+    
+    CheckPending -- Pending Found --> CheckCond
+    CheckPending -- No Pending --> End
+    
+    TransCallback --> ExitStates["Exit Current State<br>(OnExitState)"]
     ExitStates --> UpdateState["Update Current State<br>(StateManager)"]
-    UpdateState --> EnterStates["Enter New States<br>(OnEnterState)"]
+    UpdateState --> EnterStates["Enter New State<br>(OnEnterState)"]
     EnterStates --> PostProcess["Event Post-processing<br>(OnPostEvent)"]
     PostProcess --> End
 ```
@@ -1171,29 +1255,50 @@ graph TD
 ```mermaid
 graph TD
     Start[Condition Value Update] --> Update["Update Condition Value<br>(SetConditionValue)"]
-    Update --> Check["Check If Event Triggered<br>(Condition Manager)"]
-    Check -- Event conditions satisfied --> Notify["Notify Event Handler<br>(Condition Change Callback)"]
-    Check -- Conditions not satisfied --> End[End]
+    Update --> Check["Check Event Trigger<br>(Condition Manager)"]
+    Check -- Satisfies Event Conditions --> Notify["Notify Event Handler<br>(Condition Change Callback)"]
+    Check -- Doesn't Satisfy Conditions --> CheckPending["Check Pending Transitions"]
+    
+    CheckPending -- Pending Satisfied --> Notify
+    CheckPending -- Still Pending --> End[End]
     
     Notify --> CreateEvent["Create Event<br>(EventHandler)"]
     CreateEvent --> End
     
-    Timer["Timer Expiry<br>(Condition Duration)"] --> CheckDur["Check Condition Duration Status"]
-    CheckDur -- Condition still satisfied --> Notify
-    CheckDur -- Condition no longer satisfied --> End
+    Timer["Timer Expiry<br>(Condition Duration)"] --> CheckDur["Check Condition Duration State"]
+    CheckDur -- Condition Still Satisfied --> Notify
+    CheckDur -- Condition No Longer Satisfied --> End
 ```
 
 4. **State Timeout Processing**
 ```mermaid
 graph TD
     Start["Enter New State"] --> Check["Check State Timeout Setting<br>(StateManager)"]
-    Check -- Has timeout setting --> SetTimer["Set Timeout Timer"]
-    Check -- No timeout setting --> End[End]
+    Check -- Has Timeout Setting --> SetTimer["Set Timeout Timer"]
+    Check -- No Timeout Setting --> End[End]
     
     SetTimer --> WaitTimeout["Wait for Timeout"]
     WaitTimeout --> Timeout["Timeout Event Triggered<br>(State Timeout Callback)"]
-    Timeout --> CreateEvent["Create Timeout Event<br>(EventHandler)"]
+    Timeout --> CreateEvent["Create Timeout Event<br>(__STATE_TIMEOUT_EVENT__)"]
     CreateEvent --> End
+```
+
+5. **Pending Transition Management**
+```mermaid
+graph TD
+    Start["Transition Conditions Not Satisfied"] --> CheckTimeout{"Has Transition Timeout?"}
+    CheckTimeout -- Yes --> CreatePending["Create Pending Transition"]
+    CheckTimeout -- No --> End[End]
+    
+    CreatePending --> WaitCondition["Wait for Conditions or Timeout"]
+    WaitCondition --> ConditionSatisfied{"Conditions Satisfied?"}
+    WaitCondition --> TimeoutExpired{"Timeout Expired?"}
+    
+    ConditionSatisfied -- Yes --> ExecuteTransition["Execute Transition"]
+    TimeoutExpired -- Yes --> CleanupPending["Cleanup Pending Transition"]
+    
+    ExecuteTransition --> End
+    CleanupPending --> End
 ```
 
 The following diagram illustrates the detailed processing flow of the Finite State Machine:
@@ -1258,29 +1363,37 @@ graph TD
 
 ## Finite State Machine Thread Model
 
-The state machine uses a component-based multi-threading model for asynchronous processing:
+The state machine adopts a component-based multi-threading model for asynchronous processing:
 
 1. **Event Handler Thread (EventHandler Thread)**
-   - Dedicated to processing events from the event queue and event callbacks
+   - Dedicated to processing events in the event queue and event callbacks
    - Responds to external event triggers and internal condition change notifications
-   - Coordinates the complete state transition process
+   - Coordinates the complete state transition flow
+   - Manages pending transitions and their timeout handling
 
 2. **Condition Manager Thread (ConditionManager Thread)**
    - Dedicated to processing condition value updates
-   - Checks if conditions meet event definition criteria
+   - Checks if conditions satisfy event definition criteria
    - Manages timed conditions and duration checks
-   - Notifies the event handler via callbacks when conditions are met
+   - Notifies the event handler through callbacks when conditions are satisfied
+   - Handles condition-based pending transition evaluations
 
 3. **State Manager Timeout Thread (StateManager Timeout Thread)**
    - Dedicated to handling state timeout detection
-   - Notifies the event handler via callbacks when states timeout
+   - Monitors state duration and triggers timeout events when states exceed their configured timeout
+   - Notifies the event handler through callbacks when state timeout occurs
+   - Generates `__STATE_TIMEOUT_EVENT__` events for timeout-based transitions
 
-4. **Logger Thread (Logger Thread)**
-   - Dedicated to handling asynchronous logging of messages
+4. **Transition Manager Thread (TransitionManager Thread)**
+   - Manages pending transitions that are waiting for conditions to be satisfied
+   - Handles transition timeout logic for rules with timeout configurations
+   - Cleans up expired pending transitions
+   - Coordinates with condition manager for pending transition evaluations
+
+5. **Logger Thread (Logger Thread)**
+   - Dedicated to asynchronous logging of log messages
    - Manages log file rotation
-   - Ensures logging operations don't block the main business logic
-
-Each component creates its own worker thread when started (via the `Start()` method) and safely exits the thread when stopped (via the `Stop()` method). Components communicate through well-defined interfaces and callback mechanisms rather than direct inter-thread communication, simplifying concurrency control and improving system reliability and maintainability.
+   - Ensures logging operations don't block main business logic
 
 ---
 
@@ -1290,67 +1403,77 @@ To ensure data consistency and avoid race conditions in a multi-threaded environ
 
 1. **Event Handler (EventHandler)**
    - `std::mutex event_queue_mutex_`: Protects thread-safe access to the event queue
-   - `std::condition_variable event_cv_`: Condition variable for the event queue, avoiding busy waiting
+   - `std::condition_variable event_cv_`: Condition variable for the event queue to avoid busy waiting
 
 2. **Condition Manager (ConditionManager)**
    - `std::mutex condition_values_mutex_`: Protects access to condition value storage
-   - `std::mutex condition_update_mutex_`: Protects the condition update queue
+   - `std::mutex condition_update_mutex_`: Protects condition update queue
    - `std::condition_variable condition_update_cv_`: Condition variable for condition updates
-   - `std::mutex timer_mutex_`: Protects the timer queue
+   - `std::mutex timer_mutex_`: Protects timer queue
    - `std::condition_variable timer_cv_`: Condition variable for timers
-   - `std::mutex callbacks_mutex_`: Protects the callback function list
+   - `std::mutex callbacks_mutex_`: Protects callback function list
 
 3. **State Manager (StateManager)**
    - `std::mutex state_mutex_`: Protects access to state information
    - `std::mutex timeout_mutex_`: Protects state timeout information
-   - `std::condition_variable timeout_cv_`: Condition variable for state timeouts
+   - `std::condition_variable timeout_cv_`: Condition variable for state timeout
 
 4. **Transition Manager (TransitionManager)**
-   - `std::mutex rules_mutex_`: Protects access to the transition rule collection
+   - `std::mutex rules_mutex_`: Protects access to transition rule collections
+   - `std::shared_mutex pending_mutex_`: Protects pending transition collections with read-write lock for better performance
+   - `std::mutex pending_cleanup_mutex_`: Protects pending transition cleanup operations
 
-5. **Logger System (Logger)**
+5. **Logger (Logger)**
    - `std::mutex log_mutex_`: Protects logging operations
-   - `std::mutex queue_mutex_`: Protects the log message queue
-   - `std::condition_variable queue_cv_`: Condition variable for the log queue
+   - `std::mutex queue_mutex_`: Protects log message queue
+   - `std::condition_variable queue_cv_`: Condition variable for log queue
 
 This multi-mutex and condition variable approach allows different operations to proceed in parallel when possible, improving overall performance while ensuring data consistency and thread safety.
 
 ---
 
-## Performance Optimizations
+## Performance Optimization
 
-With the component-based architecture, the state machine implements several performance optimizations:
+Under the component-based architecture, the state machine implements performance optimizations in multiple aspects:
 
-1. **Componentization and Asynchronous Processing**
+1. **Component-based and Asynchronous Processing**
    - Core functionality separated into independent components, each running in dedicated threads, reducing main thread blocking
    - Events, condition updates, and log operations processed through asynchronous queues, improving system responsiveness
    - Components communicate through interfaces and callbacks, reducing coupling and improving concurrent performance
 
-2. **Fine-grained Locks and Condition Variables**
+2. **Fine-grained Locking and Condition Variables**
    - Each component uses independent mutexes to protect its data, reducing lock contention
-   - Preferential use of `std::shared_mutex` and other read-write locks, allowing concurrent reads
-   - Condition variables used instead of polling, reducing CPU usage and improving thread wake-up precision
+   - Prioritizes use of `std::shared_mutex` and other read-write locks, allowing multi-threaded concurrent reads
+   - Uses condition variables instead of polling, reducing CPU usage and improving thread wake-up precision
 
 3. **Efficient Data Structures**
-   - Priority queue (`std::priority_queue`) used to manage timed conditions, ensuring efficient retrieval of the next due timer
-   - State hierarchy implemented using tree-like data structures, optimizing state relationship queries
-   - Transition rules indexed using hash tables, improving rule lookup efficiency
+   - Uses priority queue (`std::priority_queue`) to manage timed conditions, ensuring efficient retrieval of next expiring timer
+   - State hierarchy uses tree data structures, optimizing queries for inter-state relationships
+   - Transition rules use hash table indexing, improving rule lookup efficiency
+   - Pending transitions managed with efficient data structures for timeout-based processing
 
-4. **Event and Condition Management Optimizations**
+4. **Event and Condition Management Optimization**
    - Condition change notification mechanism avoids unnecessary polling
-   - Smart condition triggering: Only re-evaluates relevant event definitions when condition values change
-   - Support for different event triggering modes (edge-triggered vs. level-triggered), optimizing event generation frequency
+   - Smart condition triggering: Re-evaluates related event definitions only when condition values change
+   - Supports different event trigger modes (edge-triggered vs level-triggered), optimizing event generation frequency
+   - Pending transition management optimizes handling of temporarily unsatisfied conditions
 
-5. **Logging System Optimizations**
-   - Asynchronous logging: Log operations executed in a dedicated thread, not blocking business logic
-   - Log message queue: Uses lock-free queues or fine-grained locks to reduce performance impact of logging
-   - Log file rotation: Automatically manages log file size, avoiding I/O performance degradation from overly large files
-   - Configurable log levels: Run-time adjustable log verbosity, balancing information richness and performance overhead
+5. **Timeout Processing Optimization**
+   - State timeout processing uses dedicated threads and condition variables for precise timing
+   - Transition timeout management uses efficient data structures to track pending transitions
+   - Timeout events are generated only when necessary, avoiding unnecessary processing overhead
+   - Cleanup of expired pending transitions is performed efficiently to prevent memory leaks
 
-6. **Memory Management Optimizations**
-   - Object pools: Reuse event objects, reducing memory allocation overhead
-   - Smart pointers: Use `std::shared_ptr` etc. to automatically manage object lifecycles, avoiding memory leaks
-   - Move semantics: Leverage C++17 move semantics to optimize data transfer, reducing unnecessary copying
+6. **Logging System Optimization**
+   - Asynchronous logging: Log operations executed in dedicated threads, not blocking business logic
+   - Log message queue: Uses lock-free queues or fine-grained locks to reduce logging performance impact
+   - Log file rotation: Automatically manages log file sizes, avoiding single file size issues affecting I/O performance
+   - Configurable log levels: Runtime adjustable log detail level, balancing information richness and performance overhead
+
+7. **Memory Management Optimization**
+   - Object pooling: Reuses event objects, reducing memory allocation overhead
+   - Smart pointers: Uses `std::shared_ptr` etc. to automatically manage object lifecycles, avoiding memory leaks
+   - Move semantics: Leverages C++17 move semantics to optimize data transfer, reducing unnecessary copying
 
 These optimization measures collectively ensure efficient operation of the state machine in complex application scenarios, including high-concurrency processing, low-latency response, and efficient resource utilization.
 
