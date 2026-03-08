@@ -6,6 +6,7 @@
  */
 
 #include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -13,6 +14,7 @@
 #include <thread>
 
 #include "logger.h"
+#include "nlohmann-json/json.hpp"
 #include "state_machine.h"
 #include "state_machine_factory.h"
 using namespace smf;

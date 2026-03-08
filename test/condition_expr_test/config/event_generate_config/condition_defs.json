@@ -1,0 +1,9 @@
+{
+    "name": "CONDITION_DEFS_EVENT",
+    "trigger_mode": "level",
+    "conditions": [
+        {"name": "cond_A", "range": [1, 1]},
+        {"name": "cond_B", "range": [1, 1]},
+        {"name": "cond_C", "range": [1, 1]}
+    ]
+}

@@ -16,6 +16,11 @@ This is a C++ implementation of a **Finite State Machine (FSM)** that supports e
 - **Event-Driven Transitions**: Trigger state transitions using events.
 - **Condition-Based Transitions**: Trigger state transitions based on conditions (e.g., value ranges, duration).
 - **Multi-dimensional Range Conditions**: Support for both simple one-dimensional ranges and multi-dimensional range arrays.
+- **Complex Condition Expressions**: Support for advanced condition logic with custom combinations:
+  - Boolean expressions with AND/OR operators (e.g., `[A AND B]`, `[A OR B]`)
+  - Multiple condition groups where any group match triggers transition (e.g., `[[A AND B], [B AND C]]`)
+  - Negation logic with `!` prefix (e.g., `[!A OR !B]` means "A not satisfied OR B not satisfied")
+  - Sequential left-to-right operator evaluation (e.g., `A OR B AND C` evaluates as `(A OR B) AND C`)
 - **Custom Handlers**: Implement custom logic for state transitions using the `StateEventHandler` interface.
 - **Asynchronous Processing**: Handle events and conditions asynchronously using multi-threading.
 - **JSON Configuration**: Load state machine configurations from JSON files.
@@ -543,6 +548,68 @@ States and transitions can be defined programmatically or loaded from a JSON fil
 }
 ```
 
+##### Complex Condition Expressions (Advanced)
+The state machine supports complex custom condition expressions using `conditions_expr` field. This provides more flexible condition logic than simple AND/OR operators.
+
+**Syntax Rules:**
+1. Expression format: `["condition_name", "OPERATOR", "condition_name", ...]`
+2. Conditions and operators alternate, starting and ending with conditions
+3. Supported operators: `AND`, `OR`
+4. Negation prefix: `!` (e.g., `!cond_A` means "condition A is NOT satisfied")
+5. Multiple expressions in array: satisfying ANY one expression triggers the transition
+6. Operators are evaluated left-to-right sequentially (no precedence)
+
+**Example 1: Simple AND condition**
+```json
+{
+  "from": "INIT",
+  "to": "STATE_A",
+  "conditions_expr": [
+    ["cond_A", "AND", "cond_B"]
+  ]
+}
+```
+This means: Transition when `cond_A AND cond_B` are both satisfied.
+
+**Example 2: Multiple condition groups (OR between groups)**
+```json
+{
+  "from": "STATE_A",
+  "to": "STATE_B",
+  "conditions_expr": [
+    ["cond_A", "AND", "cond_B"],
+    ["cond_B", "AND", "cond_C"]
+  ]
+}
+```
+This means: Transition when EITHER `(cond_A AND cond_B)` OR `(cond_B AND cond_C)` is satisfied.
+
+**Example 3: Negation logic**
+```json
+{
+  "from": "STATE_B",
+  "to": "STATE_C",
+  "conditions_expr": [
+    ["!cond_A", "OR", "!cond_B"]
+  ]
+}
+```
+This means: Transition when `cond_A is NOT satisfied` OR `cond_B is NOT satisfied`.
+
+**Example 4: Sequential operator evaluation**
+```json
+{
+  "from": "STATE_C",
+  "to": "STATE_D",
+  "conditions_expr": [
+    ["cond_A", "OR", "cond_B", "AND", "cond_C"]
+  ]
+}
+```
+This is evaluated left-to-right: `(cond_A OR cond_B) AND cond_C`
+
+Note: The `conditions_expr` field takes precedence over the legacy `conditions` + `conditions_operator` fields. If `conditions_expr` is present, the legacy fields are ignored.
+
 ##### State Timeout Transition (trans_config/waiting_timeout.json)
 ```json
 {
@@ -760,6 +827,14 @@ A specialized test for the multi-event triggering feature:
 - Testing support for multiple trigger events in a single transition rule
 - Verifying behavior of different events triggering the same transition
 - Testing event handling priority and order
+
+### Complex Condition Expression Test
+A specialized test for the complex condition expression feature:
+- Testing simple AND conditions (`[A AND B]`)
+- Testing multiple condition groups (`[[A AND B], [B AND C]]`)
+- Testing negation logic (`[!A OR !B]`)
+- Testing sequential operator evaluation (`A OR B AND C` = `(A OR B) AND C`)
+- Demonstrating flexible condition combinations for state transitions
 - Complete flow testing including condition checks and state transitions
 
 ---

@@ -35,13 +35,15 @@
 
 #include "components/event_handler.h"
 
+#include <set>
+
 #include "logger.h"
 
 namespace smf {
 
 EventHandler::EventHandler(IStateManager* state_manager, IConditionManager* condition_manager,
                            ITransitionManager* transition_manager,
-                           StateEventHandler* state_event_handler)
+                           std::shared_ptr<StateEventHandler> state_event_handler)
     : state_manager_(state_manager),
       condition_manager_(condition_manager),
       transition_manager_(transition_manager),
@@ -115,11 +117,20 @@ void EventHandler::ProcessEvent(const EventPtr& event) {
   if (transition_manager_->FindPendingTransition(current_state, event, rules)) {
     for (const auto& rule : rules) {
       std::vector<ConditionInfo> condition_infos;
-      if (condition_manager_->CheckConditions(rule->conditions, rule->conditionsOperator,
-                                              condition_infos)) {
-        PrintSatisfiedConditions(condition_infos);
-        // 执行状态转换
-        ExecuteTransition(current_state, rule, event);
+      bool conditionsSatisfied = false;
+      
+      // 优先检查复杂条件表达式
+      if (rule->HasConditionExprs()) {
+        conditionsSatisfied = condition_manager_->CheckConditionExprs(
+            rule->condition_exprs, condition_infos);
+      } else {
+        conditionsSatisfied = condition_manager_->CheckConditions(
+            rule->conditions, rule->conditionsOperator, condition_infos);
+      }
+      
+      if (conditionsSatisfied) {
+        // 执行状态转换，并传递满足的条件信息
+        ExecuteTransition(current_state, rule, event, condition_infos);
         eventHandled = true;
         transition_manager_->RemovePendingTransition(rule);
         break;  // 找到匹配的待触发转移后立即执行
@@ -132,18 +143,31 @@ void EventHandler::ProcessEvent(const EventPtr& event) {
   if (!eventHandled && transition_manager_->FindTransition(current_state, event, rules)) {
     for (const auto& rule : rules) {
       std::vector<ConditionInfo> condition_infos;
-      if (condition_manager_->CheckConditions(rule->conditions, rule->conditionsOperator,
-                                              condition_infos)) {
-        PrintSatisfiedConditions(condition_infos);
-        // 执行状态转换
-        ExecuteTransition(current_state, rule, event);
+      bool conditionsSatisfied = false;
+      
+      // 优先检查复杂条件表达式
+      if (rule->HasConditionExprs()) {
+        conditionsSatisfied = condition_manager_->CheckConditionExprs(
+            rule->condition_exprs, condition_infos);
+      } else {
+        conditionsSatisfied = condition_manager_->CheckConditions(
+            rule->conditions, rule->conditionsOperator, condition_infos);
+      }
+      
+      if (conditionsSatisfied) {
+        // 执行状态转换，并传递满足的条件信息
+        ExecuteTransition(current_state, rule, event, condition_infos);
         eventHandled = true;
         break;
       } else if (rule->timeout > 0) {
         // 如果条件不满足但配置了timeout，添加到待触发状态转移
         std::vector<ConditionInfo> unsatisfiedConditions;
         // 获取未满足的条件信息
-        GetUnsatisfiedConditions(rule->conditions, rule->conditionsOperator, unsatisfiedConditions);
+        if (rule->HasConditionExprs()) {
+          GetUnsatisfiedConditionsFromExprs(rule->condition_exprs, unsatisfiedConditions);
+        } else {
+          GetUnsatisfiedConditions(rule->conditions, rule->conditionsOperator, unsatisfiedConditions);
+        }
 
         if (transition_manager_->AddPendingTransition(rule, event, unsatisfiedConditions)) {
           SMF_LOGI("Added pending transition for rule: " + rule->from + " -> " + rule->to +
@@ -190,8 +214,18 @@ void EventHandler::TriggerEvent(const std::string& condition_name, int value, in
     std::vector<ConditionInfo> condition_infos;
     int event_condition_value = 0;
     condition_manager_->GetConditionValue(event_definition.name, event_condition_value);
-    if (condition_manager_->CheckConditions(event_definition.conditions,
-                                            event_definition.conditionsOperator, condition_infos)) {
+    
+    // 检查条件是否满足：优先使用复杂条件表达式
+    bool conditionsSatisfied = false;
+    if (event_definition.HasConditionExprs()) {
+      conditionsSatisfied = condition_manager_->CheckConditionExprs(
+          event_definition.condition_exprs, condition_infos);
+    } else {
+      conditionsSatisfied = condition_manager_->CheckConditions(
+          event_definition.conditions, event_definition.conditionsOperator, condition_infos);
+    }
+    
+    if (conditionsSatisfied) {
       // 如果条件满足，且对应事件条件当前值为0，边缘触发与水平触发均可触发事件
       if (event_condition_value == 0) {
         // 更新事件同名条件值为1
@@ -244,15 +278,34 @@ void EventHandler::PrintSatisfiedConditions(
 }
 
 void EventHandler::ExecuteTransition(const State& current_state,
-                                     const TransitionRuleSharedPtr& rule, const EventPtr& event) {
+                                     const TransitionRuleSharedPtr& rule, const EventPtr& event,
+                                     const std::vector<ConditionInfo>& condition_infos) {
   // 获取状态层次结构
   std::vector<State> exitStates;
   std::vector<State> enterStates;
   state_manager_->GetStateHierarchy(current_state, rule->to, exitStates, enterStates);
 
+  // 构建满足条件的信息字符串
+  std::string conditionsStr;
+  if (!condition_infos.empty()) {
+    conditionsStr = " [";
+    for (size_t i = 0; i < condition_infos.size(); ++i) {
+      const auto& info = condition_infos[i];
+      conditionsStr += info.name + "=" + std::to_string(info.value);
+      if (info.duration > 0) {
+        conditionsStr += " (sustain " + std::to_string(info.duration) + " ms)";
+      }
+      if (i < condition_infos.size() - 1) {
+        conditionsStr += ", ";
+      }
+    }
+    conditionsStr += "]";
+  }
+
   // 执行状态转换
   if (state_event_handler_) {
-    SMF_LOGI("Transition: " + current_state + " -> " + rule->to + " on event " + event->toString());
+    SMF_LOGI("Transition: " + current_state + " -> " + rule->to + " on event " +
+             event->toString() + conditionsStr);
     state_event_handler_->OnTransition(exitStates, event, enterStates);
     state_event_handler_->OnExitState(exitStates);
   }
@@ -276,17 +329,32 @@ void EventHandler::GetUnsatisfiedConditions(const std::vector<ConditionSharedPtr
     int value = 0;
     condition_manager_->GetConditionValue(cond->name, value);
 
-    bool valueInRange = false;
-    // 检查值是否在任何范围内
-    for (const auto& range : cond->range_values) {
-      if (value >= range.first && value <= range.second) {
-        valueInRange = true;
-        break;
-      }
-    }
-
-    if (!valueInRange) {
+    if (!cond->IsValueInRange(value)) {
       unsatisfiedConditions.push_back({cond->name, value, 0});
+    }
+  }
+}
+
+void EventHandler::GetUnsatisfiedConditionsFromExprs(
+    const std::vector<ConditionExprSharedPtr>& condition_exprs,
+    std::vector<ConditionInfo>& unsatisfiedConditions) {
+  unsatisfiedConditions.clear();
+
+  // 收集所有条件表达式中的唯一条件名称
+  std::set<std::string> conditionNames;
+  for (const auto& expr : condition_exprs) {
+    for (const auto& ref : expr->conditions) {
+      conditionNames.insert(ref.name);
+    }
+  }
+
+  // 检查每个条件是否满足
+  for (const auto& name : conditionNames) {
+    int value = 0;
+    condition_manager_->GetConditionValue(name, value);
+    // 对于复杂表达式，我们简单地检查条件值是否为1（满足）
+    if (value != 1) {
+      unsatisfiedConditions.push_back({name, value, 0});
     }
   }
 }

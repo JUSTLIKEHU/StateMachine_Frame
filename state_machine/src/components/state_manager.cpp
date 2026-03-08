@@ -91,28 +91,34 @@ bool StateManager::AddStateInfo(const StateInfo& state_info) {
 }
 
 bool StateManager::SetState(const State& state) {
-  std::lock_guard<std::mutex> lock(state_mutex_);
-  if (states_.find(state) == states_.end()) {
-    SMF_LOGE("State does not exist: " + state);
-    return false;
+  int stateTimeout = 0;
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    auto it = states_.find(state);
+    if (it == states_.end()) {
+      SMF_LOGE("State does not exist: " + state);
+      return false;
+    }
+    current_state_ = state;
+    stateTimeout = it->second.timeout;
   }
-  current_state_ = state;
 
-  // 更新状态超时信息
-  std::lock_guard<std::mutex> timeout_lock(timeout_mutex_);
-  auto it = states_.find(state);
-  if (it != states_.end() && it->second.timeout > 0) {
-    auto now = std::chrono::steady_clock::now();
-    current_state_timeout_.state = state;
-    current_state_timeout_.timeout = it->second.timeout;
-    current_state_timeout_.enterTime = now;
-    current_state_timeout_.expiryTime = now + std::chrono::milliseconds(it->second.timeout);
-    timeout_cv_.notify_one();
-    SMF_LOGD("Set state timeout for state " + state + " with timeout " +
-             std::to_string(it->second.timeout) + " ms");
-  } else {
-    current_state_timeout_.state.clear();
-    current_state_timeout_.timeout = 0;
+  // 更新状态超时信息（在 state_mutex_ 外获取 timeout_mutex_，避免嵌套锁）
+  {
+    std::lock_guard<std::mutex> timeout_lock(timeout_mutex_);
+    if (stateTimeout > 0) {
+      auto now = std::chrono::steady_clock::now();
+      current_state_timeout_.state = state;
+      current_state_timeout_.timeout = stateTimeout;
+      current_state_timeout_.enterTime = now;
+      current_state_timeout_.expiryTime = now + std::chrono::milliseconds(stateTimeout);
+      timeout_cv_.notify_one();
+      SMF_LOGD("Set state timeout for state " + state + " with timeout " +
+               std::to_string(stateTimeout) + " ms");
+    } else {
+      current_state_timeout_.state.clear();
+      current_state_timeout_.timeout = 0;
+    }
   }
   return true;
 }
@@ -123,6 +129,7 @@ State StateManager::GetCurrentState() const {
 }
 
 std::vector<State> StateManager::GetStateHierarchy(const State& state) const {
+  std::lock_guard<std::mutex> lock(state_mutex_);
   std::vector<State> hierarchy;
   State current = state;
 
@@ -141,10 +148,25 @@ std::vector<State> StateManager::GetStateHierarchy(const State& state) const {
 void StateManager::GetStateHierarchy(const State& from, const State& to,
                                      std::vector<State>& exit_states,
                                      std::vector<State>& enter_states) const {
-  // 获取起始状态的层次结构
-  auto fromStates = GetStateHierarchy(from);
-  // 获取目标状态的层次结构
-  auto toStates = GetStateHierarchy(to);
+  std::lock_guard<std::mutex> lock(state_mutex_);
+  
+  // 获取起始状态的层次结构（内部实现，不需要再次加锁）
+  auto getHierarchyInternal = [this](const State& state) -> std::vector<State> {
+    std::vector<State> hierarchy;
+    State current = state;
+    while (!current.empty()) {
+      hierarchy.push_back(current);
+      auto it = states_.find(current);
+      if (it == states_.end()) {
+        break;
+      }
+      current = it->second.parent;
+    }
+    return hierarchy;
+  };
+  
+  auto fromStates = getHierarchyInternal(from);
+  auto toStates = getHierarchyInternal(to);
 
   // 找到共同的父状态
   auto itFrom = fromStates.rbegin();

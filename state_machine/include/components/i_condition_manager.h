@@ -51,6 +51,12 @@ class IConditionManager : public IComponent {
   virtual bool CheckConditions(const std::vector<ConditionSharedPtr>& conditions,
                                const std::string& op, std::vector<ConditionInfo>& condition_infos) = 0;
   virtual void AddCondition(const ConditionSharedPtr& condition) = 0;
+  virtual bool HasCondition(const std::string& name) const = 0;
+  // condition_exprs: 条件表达式列表，满足任意一个表达式即返回 true
+  // condition_infos: 输出参数，返回满足的条件信息
+  virtual bool CheckConditionExprs(const std::vector<ConditionExprSharedPtr>& condition_exprs,
+                                   std::vector<ConditionInfo>& condition_infos) = 0;
+  
   // 新增：注册条件变化回调
   using ConditionChangeCallback = std::function<void(const std::string&, int, int, bool)>;
   virtual void RegisterConditionChangeCallback(ConditionChangeCallback callback) = 0;

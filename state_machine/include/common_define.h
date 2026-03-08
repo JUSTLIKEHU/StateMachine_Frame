@@ -58,12 +58,66 @@ inline constexpr const char* STATE_TIMEOUT_EVENT = "__STATE_TIMEOUT_EVENT__";
 
 // 定义状态的类型
 using State = std::string;
+
 // 条件类型
 struct Condition {
   std::string name;                               // 条件名称
   std::vector<std::pair<int, int>> range_values;  // 条件范围数组 [[min1, max1], [min2, max2], ...]
   int duration{0};  // 条件持续时间(毫秒),默认0表示立即生效
+
+  bool operator==(const Condition& other) const noexcept {
+    return name == other.name && range_values == other.range_values && duration == other.duration;
+  }
+
+  bool operator!=(const Condition& other) const noexcept { return !(*this == other); }
+
+  // 检查值是否在任何范围内
+  bool IsValueInRange(int value) const noexcept {
+    for (const auto& range : range_values) {
+      if (value >= range.first && value <= range.second) {
+        return true;
+      }
+    }
+    return false;
+  }
 };
+
+using ConditionSharedPtr = std::shared_ptr<Condition>;
+
+// 条件引用结构体，用于复杂条件表达式
+struct ConditionRef {
+  std::string name;      // 条件名称
+  bool negated{false};   // 是否取反（!A 表示 A 条件不满足）
+
+  bool operator==(const ConditionRef& other) const noexcept {
+    return name == other.name && negated == other.negated;
+  }
+
+  bool operator!=(const ConditionRef& other) const noexcept { return !(*this == other); }
+};
+
+// 条件表达式结构体，表示一个条件组合
+// 例如: "A AND B OR C" 表示为:
+//   conditions = [A, B, C]
+//   operators = ["AND", "OR"]
+// 按顺序从左到右依次计算: (A AND B) OR C
+struct ConditionExpr {
+  std::vector<ConditionRef> conditions;    // 条件引用列表
+  std::vector<std::string> operators;      // 操作符列表 (AND/OR)，数量 = conditions.size() - 1
+
+  bool IsValid() const noexcept {
+    if (conditions.empty()) return false;
+    return operators.size() == conditions.size() - 1;
+  }
+
+  bool operator==(const ConditionExpr& other) const noexcept {
+    return conditions == other.conditions && operators == other.operators;
+  }
+
+  bool operator!=(const ConditionExpr& other) const noexcept { return !(*this == other); }
+};
+
+using ConditionExprSharedPtr = std::shared_ptr<ConditionExpr>;
 
 struct ConditionValue {
   std::string name;                                       // 条件名称
@@ -77,6 +131,12 @@ struct ConditionInfo {
   std::string name;  // 条件名称
   int value;         // 条件值
   long duration;     // 持续时间，单位为毫秒
+
+  bool operator==(const ConditionInfo& other) const noexcept {
+    return name == other.name && value == other.value && duration == other.duration;
+  }
+
+  bool operator!=(const ConditionInfo& other) const noexcept { return !(*this == other); }
 };
 
 // 状态转移规则
@@ -84,10 +144,29 @@ struct TransitionRule {
   State from;                                          // 起始状态
   std::vector<std::string> events;                     // 事件列表（可为空）
   State to;                                            // 目标状态
-  std::vector<std::shared_ptr<Condition>> conditions;  // 条件列表
-  std::string conditionsOperator;                      // 条件运算符 ("AND" 或 "OR")
+  std::vector<ConditionSharedPtr> conditions;          // 条件列表（简单模式）
+  std::string conditionsOperator;                      // 条件运算符 ("AND" 或 "OR")（简单模式）
+  std::vector<ConditionExprSharedPtr> condition_exprs; // 复杂条件表达式列表，满足任意一个即可
   int timeout{0};  // 状态转移超时时间(毫秒)，默认0表示不超时
+
+  // 检查是否有条件（简单模式或复杂表达式模式）
+  bool HasConditions() const noexcept { 
+    return !conditions.empty() || !condition_exprs.empty(); 
+  }
+  
+  // 检查是否使用复杂条件表达式模式
+  bool HasConditionExprs() const noexcept { return !condition_exprs.empty(); }
+  
+  bool HasTimeout() const noexcept { return timeout > 0; }
+  bool IsEventTriggered(const std::string& eventName) const noexcept {
+    for (const auto& e : events) {
+      if (e == eventName) return true;
+    }
+    return false;
+  }
 };
+
+using TransitionRuleSharedPtr = std::shared_ptr<TransitionRule>;
 
 // 状态信息
 struct StateInfo {
@@ -95,6 +174,10 @@ struct StateInfo {
   State parent;                 // 父状态名称（可为空）
   std::vector<State> children;  // 子状态列表
   int timeout{0};               // 状态超时时间(毫秒)，默认0表示不超时
+
+  bool HasParent() const noexcept { return !parent.empty(); }
+  bool HasChildren() const noexcept { return !children.empty(); }
+  bool HasTimeout() const noexcept { return timeout > 0; }
 };
 
 // 状态超时信息
@@ -124,12 +207,13 @@ struct DurationCondition {
 struct EventDefinition {
   std::string name;          // 事件名称
   std::string trigger_mode;  // 触发模式：edge (边缘触发) 或 level (水平触发)
-  std::vector<std::shared_ptr<Condition>> conditions;  // 触发事件的条件列表
-  std::string conditionsOperator;                      // 条件运算符 ("AND" 或 "OR")
+  std::vector<ConditionSharedPtr> conditions;          // 触发事件的条件列表（简单模式）
+  std::string conditionsOperator;                      // 条件运算符 ("AND" 或 "OR")（简单模式）
+  std::vector<ConditionExprSharedPtr> condition_exprs; // 复杂条件表达式列表，满足任意一个即可
+  
+  // 检查是否使用复杂条件表达式模式
+  bool HasConditionExprs() const noexcept { return !condition_exprs.empty(); }
 };
-
-using ConditionSharedPtr = std::shared_ptr<Condition>;
-using TransitionRuleSharedPtr = std::shared_ptr<TransitionRule>;
 
 // 添加待触发状态转移结构体
 struct PendingTransition {

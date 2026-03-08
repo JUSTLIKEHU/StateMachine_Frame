@@ -34,16 +34,34 @@
 #include "state_machine.h"
 
 #include <algorithm>
-#include <filesystem>
-#include <mutex>
 #include <stdexcept>
 #include <vector>
 
 #include "common_define.h"
+#include "components/condition_manager.h"
+#include "components/config_loader.h"
+#include "components/event_handler.h"
+#include "components/state_manager.h"
+#include "components/transition_manager.h"
 #include "event.h"
 #include "logger.h"
 
 namespace smf {
+
+FiniteStateMachine::FiniteStateMachine(const std::string& name)
+    : name_(name),
+      running_(false),
+      initialized_(false),
+      state_event_handler_(std::make_shared<StateEventHandler>()),
+      transition_manager_(std::make_unique<TransitionManager>()),
+      state_manager_(std::make_unique<StateManager>()),
+      condition_manager_(std::make_unique<ConditionManager>()),
+      event_handler_(std::make_unique<EventHandler>(state_manager_.get(), condition_manager_.get(),
+                                                    transition_manager_.get(),
+                                                    state_event_handler_)),
+      config_loader_(std::make_unique<ConfigLoader>(state_manager_.get(), condition_manager_.get(),
+                                                    transition_manager_.get(),
+                                                    event_handler_.get())) {}
 
 bool FiniteStateMachine::Init(const std::string& configDir) {
   if (initialized_) {
@@ -192,6 +210,12 @@ void FiniteStateMachine::SetStateEventHandler(std::shared_ptr<StateEventHandler>
   }
   
   state_event_handler_ = handler;
+  
+  // 同步更新 EventHandler 中的处理器
+  auto* eventHandler = dynamic_cast<EventHandler*>(event_handler_.get());
+  if (eventHandler) {
+    eventHandler->SetStateEventHandler(handler);
+  }
 }
 
 State FiniteStateMachine::GetCurrentState() const { return state_manager_->GetCurrentState(); }

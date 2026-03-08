@@ -106,15 +106,7 @@ bool ConditionManager::CheckConditions(const std::vector<ConditionSharedPtr>& co
     }
 
     int value = it->second.value;
-    bool valueInRange = false;
-
-    // 检查值是否在任何范围内
-    for (const auto& range : cond->range_values) {
-      if (value >= range.first && value <= range.second) {
-        valueInRange = true;
-        break;
-      }
-    }
+    bool valueInRange = cond->IsValueInRange(value);
 
     // 检查持续时间
     if (cond->duration > 0 && valueInRange) {
@@ -138,6 +130,130 @@ bool ConditionManager::CheckConditions(const std::vector<ConditionSharedPtr>& co
   return (op == "AND");
 }
 
+bool ConditionManager::CheckConditionRef(const ConditionRef& ref,
+                                         const std::unordered_map<std::string, ConditionValue>& values_copy,
+                                         ConditionInfo& info) {
+  auto it = values_copy.find(ref.name);
+  if (it == values_copy.end()) {
+    SMF_LOGW("Condition value not set for expression: " + ref.name + ", treating as not satisfied");
+    return ref.negated;  // 如果条件不存在，未取反时返回 false，取反时返回 true
+  }
+
+  int value = it->second.value;
+  bool satisfied = false;
+
+  // 查找该条件名称对应的 Condition 定义
+  for (const auto& cond : all_conditions_) {
+    if (cond->name == ref.name) {
+      satisfied = cond->IsValueInRange(value);
+      
+      // 检查持续时间
+      if (cond->duration > 0 && satisfied) {
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed =
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second.lastChangedTime)
+                .count();
+        satisfied = (elapsed >= cond->duration);
+        if (satisfied) {
+          info = {ref.name, value, elapsed};
+        }
+      } else if (satisfied) {
+        info = {ref.name, value, 0};
+      }
+      break;
+    }
+  }
+
+  // 应用取反逻辑
+  if (ref.negated) {
+    satisfied = !satisfied;
+  }
+
+  return satisfied;
+}
+
+bool ConditionManager::CheckSingleConditionExpr(
+    const ConditionExprSharedPtr& expr,
+    const std::unordered_map<std::string, ConditionValue>& values_copy,
+    std::vector<ConditionInfo>& condition_infos) {
+  
+  if (!expr || !expr->IsValid()) {
+    SMF_LOGE("Invalid condition expression");
+    return false;
+  }
+
+  if (expr->conditions.empty()) {
+    return true;
+  }
+
+  // 检查第一个条件
+  ConditionInfo firstInfo;
+  bool result = CheckConditionRef(expr->conditions[0], values_copy, firstInfo);
+  if (result && firstInfo.name.length() > 0) {
+    condition_infos.push_back(firstInfo);
+  }
+
+  // 按顺序依次处理后续条件和操作符
+  // 例如: A OR B AND C
+  // 先计算 A OR B = result1
+  // 再计算 result1 AND C = final
+  for (size_t i = 0; i < expr->operators.size(); ++i) {
+    const auto& op = expr->operators[i];
+    const auto& nextRef = expr->conditions[i + 1];
+    
+    ConditionInfo nextInfo;
+    bool nextResult = CheckConditionRef(nextRef, values_copy, nextInfo);
+    
+    if (op == "AND") {
+      result = result && nextResult;
+    } else if (op == "OR") {
+      result = result || nextResult;
+    } else {
+      SMF_LOGE("Invalid operator in condition expression: " + op);
+      return false;
+    }
+    
+    if (nextResult && nextInfo.name.length() > 0) {
+      condition_infos.push_back(nextInfo);
+    }
+  }
+
+  // 如果最终结果为 false，清空条件信息
+  if (!result) {
+    condition_infos.clear();
+  }
+
+  return result;
+}
+
+bool ConditionManager::CheckConditionExprs(const std::vector<ConditionExprSharedPtr>& condition_exprs,
+                                           std::vector<ConditionInfo>& condition_infos) {
+  std::unordered_map<std::string, ConditionValue> values_copy;
+  {
+    std::lock_guard<std::mutex> lock(condition_values_mutex_);
+    values_copy = condition_values_;
+  }
+
+  if (condition_exprs.empty()) {
+    return true;
+  }
+
+  condition_infos.clear();
+
+  // 多个表达式之间是 OR 关系，满足任意一个即可
+  for (const auto& expr : condition_exprs) {
+    std::vector<ConditionInfo> expr_infos;
+    if (CheckSingleConditionExpr(expr, values_copy, expr_infos)) {
+      condition_infos = std::move(expr_infos);
+      SMF_LOGD("Condition expression satisfied");
+      return true;
+    }
+  }
+
+  SMF_LOGD("No condition expression satisfied");
+  return false;
+}
+
 void ConditionManager::AddCondition(const ConditionSharedPtr& condition) {
   if (running_) {
     SMF_LOGE("Cannot add condition while running");
@@ -153,6 +269,16 @@ void ConditionManager::AddCondition(const ConditionSharedPtr& condition) {
                                          0,  // 初始值
                                          now, now};
   }
+}
+
+bool ConditionManager::HasCondition(const std::string& name) const {
+  std::lock_guard<std::mutex> lock(condition_values_mutex_);
+  for (const auto& cond : all_conditions_) {
+    if (cond->name == name) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void ConditionManager::GetConditionValue(const std::string& name, int& value) const {
@@ -283,12 +409,7 @@ void ConditionManager::ProcessConditionUpdates() {
           // 检查是否满足任何条件的范围要求
           for (const auto& cond : all_conditions_) {
             if (cond->name == update.name) {
-              for (const auto& range : cond->range_values) {
-                if (update.value >= range.first && update.value <= range.second) {
-                  valueInRange = true;
-                  break;
-                }
-              }
+              valueInRange = cond->IsValueInRange(update.value);
               if (cond->duration > 0 && valueInRange) {
                 hasDurationCondition = true;
                 std::lock_guard<std::mutex> timerLock(timer_mutex_);

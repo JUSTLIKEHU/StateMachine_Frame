@@ -1,0 +1,8 @@
+{
+    "from": "STATE_A",
+    "to": "STATE_B",
+    "conditions_expr": [
+        ["cond_A", "AND", "cond_B"],
+        ["cond_B", "AND", "cond_C"]
+    ]
+}

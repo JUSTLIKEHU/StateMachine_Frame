@@ -63,7 +63,10 @@ class ConditionManager : public IConditionManager {
   void SetConditionValue(const std::string& name, int value) override;
   bool CheckConditions(const std::vector<ConditionSharedPtr>& conditions, const std::string& op,
                        std::vector<ConditionInfo>& condition_infos) override;
+  bool CheckConditionExprs(const std::vector<ConditionExprSharedPtr>& condition_exprs,
+                           std::vector<ConditionInfo>& condition_infos) override;
   void AddCondition(const ConditionSharedPtr& condition) override;
+  bool HasCondition(const std::string& name) const override;
   void GetConditionValue(const std::string& name, int& value) const override;
   void RegisterConditionChangeCallback(ConditionChangeCallback callback) override;
 
@@ -72,6 +75,16 @@ class ConditionManager : public IConditionManager {
   void TimerLoop();
   void ProcessConditionUpdates();
   void NotifyConditionChange(const std::string& name, int value, int duration, bool meetsCondition);
+  
+  // 检查单个条件表达式
+  bool CheckSingleConditionExpr(const ConditionExprSharedPtr& expr,
+                                const std::unordered_map<std::string, ConditionValue>& values_copy,
+                                std::vector<ConditionInfo>& condition_infos);
+  
+  // 检查单个条件引用是否满足
+  bool CheckConditionRef(const ConditionRef& ref,
+                         const std::unordered_map<std::string, ConditionValue>& values_copy,
+                         ConditionInfo& info);
 
  private:
   std::atomic_bool running_{false};

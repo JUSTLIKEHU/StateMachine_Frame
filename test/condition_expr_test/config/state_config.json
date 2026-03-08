@@ -1,0 +1,10 @@
+{
+    "states": [
+        {"name": "INIT"},
+        {"name": "STATE_A"},
+        {"name": "STATE_B"},
+        {"name": "STATE_C"},
+        {"name": "STATE_D"}
+    ],
+    "initial_state": "INIT"
+}

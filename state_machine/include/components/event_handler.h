@@ -38,6 +38,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <queue>
+#include <set>
 #include <thread>
 
 #include "i_condition_manager.h"
@@ -51,7 +52,7 @@ namespace smf {
 class EventHandler : public IEventHandler {
  public:
   EventHandler(IStateManager* state_manager, IConditionManager* condition_manager,
-               ITransitionManager* transition_manager, StateEventHandler* state_event_handler);
+               ITransitionManager* transition_manager, std::shared_ptr<StateEventHandler> state_event_handler);
   ~EventHandler();
 
   // IComponent interface
@@ -73,10 +74,13 @@ class EventHandler : public IEventHandler {
 
   // 辅助方法
   void ExecuteTransition(const State& current_state, const TransitionRuleSharedPtr& rule,
-                         const EventPtr& event);
+                         const EventPtr& event,
+                         const std::vector<ConditionInfo>& condition_infos = {});
   void GetUnsatisfiedConditions(const std::vector<ConditionSharedPtr>& conditions,
                                 const std::string& op,
                                 std::vector<ConditionInfo>& unsatisfiedConditions);
+  void GetUnsatisfiedConditionsFromExprs(const std::vector<ConditionExprSharedPtr>& condition_exprs,
+                                         std::vector<ConditionInfo>& unsatisfiedConditions);
 
  private:
   std::atomic_bool running_{false};
@@ -91,7 +95,12 @@ class EventHandler : public IEventHandler {
   IStateManager* state_manager_;
   IConditionManager* condition_manager_;
   ITransitionManager* transition_manager_;
-  StateEventHandler* state_event_handler_;
+  std::shared_ptr<StateEventHandler> state_event_handler_;
+
+ public:
+  void SetStateEventHandler(std::shared_ptr<StateEventHandler> handler) {
+    state_event_handler_ = handler;
+  }
 };
 
 }  // namespace smf

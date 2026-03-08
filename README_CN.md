@@ -16,6 +16,11 @@
 - **事件驱动转换**：使用事件触发状态转换。
 - **基于条件的转换**：基于条件(例如，值范围、持续时间)触发状态转换。
 - **多维范围条件**：支持简单的一维范围和多维范围数组。
+- **复杂条件表达式**：支持高级条件逻辑的自定义组合：
+  - 带 AND/OR 运算符的布尔表达式（如 `[A AND B]`、`[A OR B]`）
+  - 多条件组，任一组匹配即触发转换（如 `[[A AND B], [B AND C]]`）
+  - 带 `!` 前缀的取反逻辑（如 `[!A OR !B]` 表示“A 不满足或 B 不满足”）
+  - 从左到右的顺序运算符求值（如 `A OR B AND C` 求值为 `(A OR B) AND C`）
 - **自定义处理器**：使用`StateEventHandler`接口实现自定义状态转换逻辑。
 - **异步处理**：使用多线程异步处理事件和条件。
 - **JSON配置**：从JSON文件加载状态机配置。
@@ -33,8 +38,6 @@
 - **工厂模式支持**：通过集中式工厂创建和管理多个状态机。
 - **命名状态机**：支持创建和管理多个具名状态机。
 - **单例工厂管理**：集中管理所有状态机实例。
-- **日志系统优化**：异步日志记录、日志消息队列、日志文件轮转、可配置的日志级别
-- **内存管理优化**：对象池、智能指针、移动语义
 
 ---
 
@@ -133,7 +136,7 @@ StateMachine_Frame/
 │   │           ├── wait_timeout.json       # 等待超时转换
 │   │           ├── longwait_timeout.json   # 长等待超时转换
 │   │           └── completed_to_working.json # 完成到工作转换
-│   └── condition_timeout_test/ # 条件超时测试
+│   ├── condition_timeout_test/ # 条件超时测试
 │       ├── CMakeLists.txt    # 测试构建配置
 │       ├── main.cpp          # 条件超时测试
 │       └── config/           # 测试配置
@@ -145,14 +148,22 @@ StateMachine_Frame/
 │               ├── idle2heating.json          # 空闲到加热转换
 │               ├── heating2pressurizing.json  # 加热到加压转换
 │               └── pressurizing2ready.json    # 加压到就绪转换
-├── third_party/              # 外部依赖
-│   └── nlohmann-json/        # JSON库
-│       ├── json_fwd.hpp      # 前向声明
-│       └── json.hpp          # JSON实现
-├── utils/                    # 工具文件（目前为空）
-├── .clang-format            # 代码格式化配置
-├── .gitignore               # Git忽略规则
-└── .vscode/                 # VSCode配置（可选）
+│   └── condition_expr_test/  # 复杂条件表达式测试
+│       ├── CMakeLists.txt    # 测试构建配置
+│       ├── condition_expr_test.cpp  # 复杂条件表达式测试
+│       └── config/           # 测试配置
+│           ├── event_generate_config/  # 测试用事件配置
+│           │   └── condition_defs.json  # 条件定义
+│           ├── state_config.json       # 状态配置
+│           └── trans_config/           # 转换配置
+│               ├── init_to_a.json      # 初始化到 A 转换
+│               ├── a_to_b.json         # A 到 B 转换
+│               ├── b_to_c.json        # B 到 C 转换
+│               └── c_to_d.json        # C 到 D 转换
+└── third_party/              # 外部依赖
+    └── nlohmann-json/        # JSON库
+        ├── json_fwd.hpp      # 前向声明
+        └── json.hpp          # JSON实现
 ```
 
 ## 代码结构
@@ -192,7 +203,7 @@ class IConditionManager : public IComponent {
 };
 ```
 
-3. **IStateManager**：状态管理器接口，负责状态信息的管理和维护
+3. **IStateManager**：状态管理器接口，负责状态信息管理
 ```cpp
 class IStateManager : public IComponent {
  public:
@@ -492,7 +503,8 @@ auto all_fsms = StateMachineFactory::GetAllStateMachines();
     {"name": "STAND_BY", "parent": "ON"},
     {"name": "ACTIVE", "parent": "ON"},
     {"name": "PAUSED", "parent": "ON"},
-    {"name": "WAITING", "parent": "ON", "timeout": 5000}
+    {"name": "WAITING", "parent": "ON", "timeout": 5000},
+    {"name": "ERROR", "timeout": 3000}
   ],
   "initial_state": "OFF"
 }
@@ -547,6 +559,68 @@ auto all_fsms = StateMachineFactory::GetAllStateMachines();
   "timeout": 5000
 }
 ```
+
+##### 复杂条件表达式（高级）
+状态机支持使用 `conditions_expr` 字段的复杂自定义条件表达式，提供比简单 AND/OR 运算符更灵活的条件逻辑。
+
+**语法规则：**
+1. 表达式格式：`["条件名", "运算符", "条件名", ...]`
+2. 条件和运算符交替出现，以条件开始和结束
+3. 支持的运算符：`AND`、`OR`
+4. 取反前缀：`!`（如 `!cond_A` 表示“条件 A 不满足”）
+5. 数组中的多个表达式：满足任一表达式即触发转换
+6. 运算符从左到右顺序求值（无优先级）
+
+**示例 1：简单 AND 条件**
+```json
+{
+  "from": "INIT",
+  "to": "STATE_A",
+  "conditions_expr": [
+    ["cond_A", "AND", "cond_B"]
+  ]
+}
+```
+表示：当 `cond_A AND cond_B` 均满足时转换。
+
+**示例 2：多条件组（组间为 OR）**
+```json
+{
+  "from": "STATE_A",
+  "to": "STATE_B",
+  "conditions_expr": [
+    ["cond_A", "AND", "cond_B"],
+    ["cond_B", "AND", "cond_C"]
+  ]
+}
+```
+表示：当 `(cond_A AND cond_B)` 或 `(cond_B AND cond_C)` 满足时转换。
+
+**示例 3：取反逻辑**
+```json
+{
+  "from": "STATE_B",
+  "to": "STATE_C",
+  "conditions_expr": [
+    ["!cond_A", "OR", "!cond_B"]
+  ]
+}
+```
+表示：当 `cond_A 不满足` 或 `cond_B 不满足` 时转换。
+
+**示例 4：顺序运算符求值**
+```json
+{
+  "from": "STATE_C",
+  "to": "STATE_D",
+  "conditions_expr": [
+    ["cond_A", "OR", "cond_B", "AND", "cond_C"]
+  ]
+}
+```
+从左到右求值为：`(cond_A OR cond_B) AND cond_C`
+
+注意：`conditions_expr` 字段优先于旧的 `conditions` + `conditions_operator` 字段。若存在 `conditions_expr`，则忽略旧字段。
 
 ##### 状态超时转换 (trans_config/waiting_timeout.json)
 ```json
@@ -712,8 +786,14 @@ SMF_LOGE("这是一条错误信息");
 # 运行状态超时测试
 ./run_test.sh timeout
 
+# 运行条件超时测试
+./run_test.sh timeout2
+
 # 运行多事件测试
 ./run_test.sh event
+
+# 运行复杂条件表达式测试
+./run_test.sh expr
 
 # 运行所有测试
 ./run_test.sh all
@@ -754,6 +834,14 @@ SMF_LOGE("这是一条错误信息");
 - 测试同一转换规则支持多个触发事件
 - 验证不同事件触发相同转换的行为
 - 测试事件处理的优先级和顺序
+
+### 复杂条件表达式测试
+专门用于测试复杂条件表达式功能的测试：
+- 测试简单 AND 条件（`[A AND B]`）
+- 测试多条件组（`[[A AND B], [B AND C]]`）
+- 测试取反逻辑（`[!A OR !B]`）
+- 测试顺序运算符求值（`A OR B AND C` = `(A OR B) AND C`）
+- 演示状态转换的灵活条件组合
 - 包含条件检查和状态转换的完整流程测试
 
 ### 条件超时测试
@@ -1209,6 +1297,7 @@ graph TD
     
     CM -- 条件变化通知 --> EH
     SM -- 状态超时通知 --> EH
+    TM -- 待处理转换管理 --> EH
     
     EH -- 查找转换规则 --> TM
     EH -- 检查条件 --> CM
@@ -1220,9 +1309,9 @@ graph TD
 ### 组件处理流程
 
 1. **配置加载流程**
-   - 加载状态配置：解析状态定义及其父子关系，初始状态等
+   - 加载状态配置：解析状态定义及其父子关系、初始状态和超时设置
    - 加载事件生成配置：解析事件定义及其触发条件
-   - 加载转换规则配置：解析状态转换规则
+   - 加载转换规则配置：解析状态转换规则，包括超时配置
    - 验证配置的有效性和一致性
 
 2. **事件处理流程**
@@ -1233,10 +1322,18 @@ graph TD
     PreProcess -- 预处理拒绝 --> End[结束]
     
     FindRules -- 找到规则 --> CheckCond["检查条件<br>(ConditionManager)"]
+    FindRules -- 未找到规则 --> CheckPending["检查待处理转换<br>(TransitionManager)"]
     FindRules -- 未找到规则 --> End
     
     CheckCond -- 条件满足 --> TransCallback["触发转换回调<br>(OnTransition)"]
-    CheckCond -- 条件不满足 --> End
+    CheckCond -- 条件不满足 --> CheckTimeout{"有超时?"}
+    
+    CheckTimeout -- 是 --> AddPending["添加待处理转换<br>(TransitionManager)"]
+    CheckTimeout -- 否 --> End
+    AddPending --> End
+    
+    CheckPending -- 有待处理 --> CheckCond
+    CheckPending -- 无待处理 --> End
     
     TransCallback --> ExitStates["退出当前状态<br>(OnExitState)"]
     ExitStates --> UpdateState["更新当前状态<br>(StateManager)"]
@@ -1249,9 +1346,12 @@ graph TD
 ```mermaid
 graph TD
     Start[条件值更新] --> Update["更新条件值<br>(SetConditionValue)"]
-    Update --> Check["检查是否触发事件<br>(条件管理器)"]
+    Update --> Check["检查事件触发<br>(条件管理器)"]
     Check -- 满足事件条件 --> Notify["通知事件处理器<br>(条件变化回调)"]
-    Check -- 不满足条件 --> End[结束]
+    Check -- 不满足条件 --> CheckPending["检查待处理转换"]
+    
+    CheckPending -- 待处理满足 --> Notify
+    CheckPending -- 仍待处理 --> End[结束]
     
     Notify --> CreateEvent["创建事件<br>(EventHandler)"]
     CreateEvent --> End
@@ -1270,8 +1370,26 @@ graph TD
     
     SetTimer --> WaitTimeout["等待超时"]
     WaitTimeout --> Timeout["超时事件触发<br>(状态超时回调)"]
-    Timeout --> CreateEvent["创建超时事件<br>(EventHandler)"]
+    Timeout --> CreateEvent["创建超时事件<br>(__STATE_TIMEOUT_EVENT__)"]
     CreateEvent --> End
+```
+
+5. **待处理转换管理**
+```mermaid
+graph TD
+    Start["转换条件不满足"] --> CheckTimeout{"有转换超时?"}
+    CheckTimeout -- 是 --> CreatePending["创建待处理转换"]
+    CheckTimeout -- 否 --> End[结束]
+    
+    CreatePending --> WaitCondition["等待条件满足或超时"]
+    WaitCondition --> ConditionSatisfied{"条件满足?"}
+    WaitCondition --> TimeoutExpired{"超时到期?"}
+    
+    ConditionSatisfied -- 是 --> ExecuteTransition["执行转换"]
+    TimeoutExpired -- 是 --> CleanupPending["清理待处理转换"]
+    
+    ExecuteTransition --> End
+    CleanupPending --> End
 ```
 
 以下图表说明了有限状态机的详细处理流程：
@@ -1344,6 +1462,7 @@ graph TD
    - 专门处理事件队列中的事件和事件回调
    - 响应外部事件触发和内部条件变化通知
    - 协调状态转换的完整流程
+   - 管理待处理转换及其超时处理
 
 2. **条件管理器线程 (ConditionManager Thread)**
    - 专门处理条件值更新
@@ -1353,7 +1472,9 @@ graph TD
 
 3. **状态管理器超时线程 (StateManager Timeout Thread)**
    - 专门处理状态的超时检测
+   - 监控状态持续时间，当状态超过配置的超时时触发超时事件
    - 当状态超时时，通过回调通知事件处理器
+   - 生成 `__STATE_TIMEOUT_EVENT__` 事件用于基于超时的转换
 
 4. **转换管理器线程 (TransitionManager Thread)**
    - 管理等待条件满足的待处理转换
@@ -1423,6 +1544,7 @@ graph TD
    - 使用优先级队列(`std::priority_queue`)管理定时条件，确保高效获取下一个到期定时器
    - 状态层次结构使用树形数据结构，优化状态间关系查询
    - 转换规则使用哈希表索引，提高规则查找效率
+   - 待处理转换使用高效数据结构进行基于超时的处理
 
 4. **事件与条件管理优化**
    - 条件变化通知机制避免了不必要的轮询
@@ -1436,7 +1558,13 @@ graph TD
    - 仅在必要时生成超时事件，避免不必要的处理开销
    - 高效执行过期待处理转换的清理，防止内存泄漏
 
-6. **内存管理优化**
+6. **日志系统优化**
+   - 异步日志记录：日志操作在专用线程中执行，不阻塞业务逻辑
+   - 日志消息队列：使用无锁队列或细粒度锁降低日志对性能的影响
+   - 日志文件轮转：自动管理日志文件大小，避免单文件过大影响 I/O 性能
+   - 可配置日志级别：运行时可调整日志详细程度，平衡信息丰富度与性能开销
+
+7. **内存管理优化**
    - 对象池：重用事件对象，减少内存分配开销
    - 智能指针：使用`std::shared_ptr`等自动管理对象生命周期，避免内存泄漏
    - 移动语义：利用C++17移动语义优化数据传递，减少不必要的复制
@@ -1449,7 +1577,7 @@ graph TD
 
 - **nlohmann/json**：用于解析和生成JSON数据的现代C++JSON库。
   - GitHub: [nlohmann/json](https://github.com/nlohmann/json)
-- **logger**：提供日志功能支持，集成在库中。
+- **logger**：集成在库中的线程安全日志系统。
 
 ---
 

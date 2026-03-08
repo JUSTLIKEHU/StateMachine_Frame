@@ -32,6 +32,8 @@
 
 #pragma once
 
+#include <mutex>
+
 #include "state_machine.h"
 
 namespace smf {
@@ -48,6 +50,7 @@ class StateMachineFactory {
 
  private:
   static std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>> state_machines_;
+  static std::mutex mutex_;
 };
 
 }  // namespace smf

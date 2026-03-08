@@ -37,35 +37,22 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
-#include <condition_variable>
-#include <fstream>
-#include <functional>
-#include <iostream>
-#include <map>
 #include <memory>
-#include <mutex>
-#include <queue>
-#include <stdexcept>
 #include <string>
-#include <thread>
-#include <unordered_map>
 #include <vector>
 
 #include "common_define.h"
-#include "components/condition_manager.h"
-#include "components/config_loader.h"
-#include "components/event_handler.h"
-#include "components/state_manager.h"
-#include "components/transition_manager.h"
+#include "components/i_component.h"
+#include "components/i_condition_manager.h"
+#include "components/i_config_loader.h"
+#include "components/i_event_handler.h"
+#include "components/i_state_manager.h"
+#include "components/i_transition_manager.h"
 #include "event.h"
-#include "logger.h"                // 添加日志头文件
-#include "nlohmann-json/json.hpp"  // 引入 nlohmann/json 库
-#include "state_event_handler.h"   // 引入状态事件处理器头文件
+#include "logger.h"
+#include "state_event_handler.h"
 
 namespace smf {
-
-using json = nlohmann::json;
 
 // 有限状态机类
 class FiniteStateMachine final : public std::enable_shared_from_this<FiniteStateMachine> {
@@ -190,21 +177,7 @@ class FiniteStateMachine final : public std::enable_shared_from_this<FiniteState
   void GetConditionValue(const std::string& name, int& value) const;
 
  private:
-  FiniteStateMachine(const std::string& name)
-      : name_(name),
-        running_(false),
-        initialized_(false),
-        state_event_handler_(std::make_shared<StateEventHandler>()),
-        transition_manager_(std::make_unique<TransitionManager>()),
-        state_manager_(std::make_unique<StateManager>()),
-        condition_manager_(std::make_unique<ConditionManager>()),
-        event_handler_(
-            std::make_unique<EventHandler>(state_manager_.get(), condition_manager_.get(),
-                                           transition_manager_.get(), state_event_handler_.get())),
-        config_loader_(
-            std::make_unique<ConfigLoader>(state_manager_.get(), condition_manager_.get(),
-                                           transition_manager_.get(), event_handler_.get())) {
-  }
+  explicit FiniteStateMachine(const std::string& name);
 
  private:
   std::string name_;

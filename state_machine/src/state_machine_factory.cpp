@@ -39,8 +39,10 @@ namespace smf {
 
 std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>>
     StateMachineFactory::state_machines_;
+std::mutex StateMachineFactory::mutex_;
 
 std::vector<std::string> StateMachineFactory::GetAllStateMachineNames() {
+  std::lock_guard<std::mutex> lock(mutex_);
   std::vector<std::string> names;
   for (const auto& [name, _] : state_machines_) {
     names.push_back(name);
@@ -50,6 +52,7 @@ std::vector<std::string> StateMachineFactory::GetAllStateMachineNames() {
 
 std::shared_ptr<FiniteStateMachine> StateMachineFactory::CreateStateMachine(
     const std::string& name) {
+  std::lock_guard<std::mutex> lock(mutex_);
   if (state_machines_.find(name) != state_machines_.end()) {
     SMF_LOGW("State machine with name:  " + name + " already exists");
     return state_machines_[name];
@@ -60,6 +63,7 @@ std::shared_ptr<FiniteStateMachine> StateMachineFactory::CreateStateMachine(
 }
 
 std::shared_ptr<FiniteStateMachine> StateMachineFactory::GetStateMachine(const std::string& name) {
+  std::lock_guard<std::mutex> lock(mutex_);
   if (state_machines_.find(name) == state_machines_.end()) {
     SMF_LOGE("State machine with name:  " + name + " not found");
     return nullptr;
@@ -69,6 +73,7 @@ std::shared_ptr<FiniteStateMachine> StateMachineFactory::GetStateMachine(const s
 
 std::unordered_map<std::string, std::shared_ptr<FiniteStateMachine>>
 StateMachineFactory::GetAllStateMachines() {
+  std::lock_guard<std::mutex> lock(mutex_);
   return state_machines_;
 }
 

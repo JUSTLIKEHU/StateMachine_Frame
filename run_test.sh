@@ -39,6 +39,7 @@ if [ "$#" -lt 1 ]; then
   echo -e "  $0 timeout   ${GREEN}# 运行state_timeout_test程序${NC}"
   echo -e "  $0 timeout2  ${GREEN}# 运行condition_timeout_test程序${NC}"
   echo -e "  $0 event     ${GREEN}# 运行multi_event_test程序${NC}"
+  echo -e "  $0 expr      ${GREEN}# 运行condition_expr_test程序（复杂条件表达式测试）${NC}"
   echo -e "  $0 all      ${GREEN}# 运行所有测试程序${NC}"
   exit 1
 fi
@@ -141,5 +142,20 @@ if [ "$1" = "timeout2" ] || [ "$1" = "all" ]; then
     fi
   fi
 fi
+
+if [ "$1" = "expr" ] || [ "$1" = "all" ]; then
+  echo -e "${BLUE}===============================${NC}"
+  echo -e "${BLUE}运行condition_expr_test...${NC}"
+  echo -e "${BLUE}===============================${NC}"
+  if [ ! -f "./condition_expr_test" ]; then
+    echo -e "${RED}condition_expr_test不存在${NC}"
+  else
+    "./condition_expr_test"
+    if [ $? -ne 0 ]; then
+      echo -e "${RED}condition_expr_test运行失败${NC}"
+    fi
+  fi
+fi
+
 cd ../../
 echo -e "${GREEN}所有测试完成${NC}"

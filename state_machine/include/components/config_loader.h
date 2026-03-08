@@ -97,6 +97,22 @@ class ConfigLoader : public IConfigLoader {
   bool LoadJsonFile(const std::string& filePath, json& jsonData);
   std::vector<std::string> GetJsonFilesInDirectory(const std::string& dirPath);
 
+  // 条件解析辅助方法
+  bool ParseConditionFromJson(const json& condJson, ConditionSharedPtr& outCondition,
+                              const std::string& contextInfo);
+  
+  // 复杂条件表达式解析方法
+  // 解析单个条件表达式，如 ["A", "AND", "B", "OR", "C"]
+  bool ParseConditionExpr(const json& exprJson, ConditionExprSharedPtr& outExpr,
+                          const std::string& contextInfo);
+  
+  // 解析条件表达式列表，如 [["A", "AND", "B"], ["B", "AND", "C"]]
+  bool ParseConditionExprs(const json& exprsJson, std::vector<ConditionExprSharedPtr>& outExprs,
+                           const std::string& contextInfo);
+  
+  // 验证条件表达式
+  bool ValidateConditionExpr(const json& exprJson) const;
+
  private:
   // 组件引用
   IStateManager* state_manager_;

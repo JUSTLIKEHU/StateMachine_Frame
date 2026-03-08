@@ -340,6 +340,38 @@ bool ConfigLoader::ParseStateConfig(const json& config) {
   }
 }
 
+bool ConfigLoader::ParseConditionFromJson(const json& condJson, ConditionSharedPtr& outCondition,
+                                          const std::string& contextInfo) {
+  outCondition = std::make_shared<Condition>();
+  outCondition->name = condJson["name"];
+  outCondition->duration = condJson.value("duration", 0);
+
+  if (!condJson.contains("range")) {
+    return true;
+  }
+
+  if (!condJson["range"].is_array()) {
+    SMF_LOGE("Range must be an array in " + contextInfo);
+    return false;
+  }
+
+  const auto& rangeJson = condJson["range"];
+  if (rangeJson.size() == 2 && rangeJson[0].is_number() && rangeJson[1].is_number()) {
+    outCondition->range_values.push_back({rangeJson[0], rangeJson[1]});
+  } else {
+    for (const auto& range : rangeJson) {
+      if (range.is_array() && range.size() == 2) {
+        outCondition->range_values.push_back({range[0], range[1]});
+      } else {
+        SMF_LOGE("Invalid range format in " + contextInfo);
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 bool ConfigLoader::ParseEventConfig(const json& config) {
   try {
     EventDefinition eventDef;
@@ -347,38 +379,37 @@ bool ConfigLoader::ParseEventConfig(const json& config) {
     eventDef.trigger_mode = config.value("trigger_mode", "edge");
     eventDef.conditionsOperator = config.value("conditions_operator", "AND");
 
+    std::string contextInfo = "event config: " + eventDef.name;
+
+    // 先解析 conditions（简单条件模式），注册条件定义
     if (config.contains("conditions")) {
       for (const auto& condJson : config["conditions"]) {
-        ConditionSharedPtr cond = std::make_shared<Condition>();
-        cond->name = condJson["name"];
-        cond->duration = condJson.value("duration", 0);
-
-        if (condJson.contains("range")) {
-          if (condJson["range"].is_array()) {
-            if (condJson["range"].size() == 2 && condJson["range"][0].is_number() &&
-                condJson["range"][1].is_number()) {
-              // 简单的一维数组格式 [min, max]
-              cond->range_values.push_back({condJson["range"][0], condJson["range"][1]});
-            } else {
-              // 二维数组格式 [[min1, max1], [min2, max2], ...]
-              for (const auto& range : condJson["range"]) {
-                if (range.is_array() && range.size() == 2) {
-                  cond->range_values.push_back({range[0], range[1]});
-                } else {
-                  SMF_LOGE("Invalid range format in event config: " + eventDef.name);
-                  return false;
-                }
-              }
-            }
-          } else {
-            SMF_LOGE("Range must be an array in event config: " + eventDef.name);
-            return false;
-          }
+        ConditionSharedPtr cond;
+        if (!ParseConditionFromJson(condJson, cond, contextInfo)) {
+          return false;
         }
-
         eventDef.conditions.push_back(cond);
         condition_manager_->AddCondition(cond);
       }
+    }
+
+    // 再解析 conditions_expr（复杂条件表达式），校验引用的条件是否已定义
+    if (config.contains("conditions_expr")) {
+      if (!ParseConditionExprs(config["conditions_expr"], eventDef.condition_exprs, contextInfo)) {
+        return false;
+      }
+      
+      // 校验复杂表达式中引用的条件是否已经定义
+      for (const auto& expr : eventDef.condition_exprs) {
+        for (const auto& ref : expr->conditions) {
+          if (!condition_manager_->HasCondition(ref.name)) {
+            SMF_LOGE("Condition '" + ref.name + "' referenced in conditions_expr is not defined in " + contextInfo);
+            return false;
+          }
+        }
+      }
+      
+      SMF_LOGI("Using complex condition expressions for event: " + eventDef.name);
     }
 
     if (!event_handler_->AddEventDefinition(eventDef)) {
@@ -437,38 +468,37 @@ bool ConfigLoader::ParseTransitionConfig(const json& config) {
       return false;
     }
 
+    std::string contextInfo = "transition config: " + rule->from + " -> " + rule->to;
+
+    // 先解析 conditions（简单条件模式），注册条件定义
     if (config.contains("conditions")) {
       for (const auto& condJson : config["conditions"]) {
-        ConditionSharedPtr cond = std::make_shared<Condition>();
-        cond->name = condJson["name"];
-        cond->duration = condJson.value("duration", 0);
-
-        if (condJson.contains("range")) {
-          if (condJson["range"].is_array()) {
-            if (condJson["range"].size() == 2 && condJson["range"][0].is_number() &&
-                condJson["range"][1].is_number()) {
-              // 简单的一维数组格式 [min, max]
-              cond->range_values.push_back({condJson["range"][0], condJson["range"][1]});
-            } else {
-              // 二维数组格式 [[min1, max1], [min2, max2], ...]
-              for (const auto& range : condJson["range"]) {
-                if (range.is_array() && range.size() == 2) {
-                  cond->range_values.push_back({range[0], range[1]});
-                } else {
-                  SMF_LOGE("Invalid range format in transition config for: " + rule->from);
-                  return false;
-                }
-              }
-            }
-          } else {
-            SMF_LOGE("Range must be an array in transition config for: " + rule->from);
-            return false;
-          }
+        ConditionSharedPtr cond;
+        if (!ParseConditionFromJson(condJson, cond, contextInfo)) {
+          return false;
         }
-
         rule->conditions.push_back(cond);
         condition_manager_->AddCondition(cond);
       }
+    }
+
+    // 再解析 conditions_expr（复杂条件表达式），校验引用的条件是否已定义
+    if (config.contains("conditions_expr")) {
+      if (!ParseConditionExprs(config["conditions_expr"], rule->condition_exprs, contextInfo)) {
+        return false;
+      }
+      
+      // 校验复杂表达式中引用的条件是否已经定义
+      for (const auto& expr : rule->condition_exprs) {
+        for (const auto& ref : expr->conditions) {
+          if (!condition_manager_->HasCondition(ref.name)) {
+            SMF_LOGE("Condition '" + ref.name + "' referenced in conditions_expr is not defined in " + contextInfo);
+            return false;
+          }
+        }
+      }
+      
+      SMF_LOGI("Using complex condition expressions for transition: " + rule->from + " -> " + rule->to);
     }
 
     if (!transition_manager_->AddTransition(rule)) {
@@ -528,6 +558,119 @@ std::vector<std::string> ConfigLoader::GetJsonFilesInDirectory(const std::string
   }
 
   return jsonFiles;
+}
+
+bool ConfigLoader::ValidateConditionExpr(const json& exprJson) const {
+  // 条件表达式格式: ["A", "AND", "B"] 或 ["!A", "OR", "B", "AND", "C"]
+  // 条件名称和操作符交替出现，以条件名称开始和结束
+  if (!exprJson.is_array()) {
+    SMF_LOGE("Condition expression must be an array");
+    return false;
+  }
+
+  if (exprJson.size() == 0) {
+    SMF_LOGE("Condition expression cannot be empty");
+    return false;
+  }
+
+  // 元素数量必须是奇数（条件-操作符-条件-操作符-条件...）
+  if (exprJson.size() % 2 == 0) {
+    SMF_LOGE("Condition expression must have odd number of elements (condition-operator-condition...)");
+    return false;
+  }
+
+  for (size_t i = 0; i < exprJson.size(); ++i) {
+    if (!exprJson[i].is_string()) {
+      SMF_LOGE("All elements in condition expression must be strings");
+      return false;
+    }
+
+    std::string element = exprJson[i].get<std::string>();
+    
+    if (i % 2 == 0) {
+      // 偶数位置应该是条件名称（可以带 ! 前缀）
+      if (element.empty()) {
+        SMF_LOGE("Condition name cannot be empty");
+        return false;
+      }
+      // 去掉可能的 ! 前缀后检查名称
+      std::string name = element;
+      if (name[0] == '!') {
+        name = name.substr(1);
+      }
+      if (name.empty()) {
+        SMF_LOGE("Condition name cannot be empty (after removing '!' prefix)");
+        return false;
+      }
+    } else {
+      // 奇数位置应该是操作符
+      if (element != "AND" && element != "OR") {
+        SMF_LOGE("Invalid operator '" + element + "' in condition expression, must be 'AND' or 'OR'");
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+bool ConfigLoader::ParseConditionExpr(const json& exprJson, ConditionExprSharedPtr& outExpr,
+                                      const std::string& contextInfo) {
+  if (!ValidateConditionExpr(exprJson)) {
+    SMF_LOGE("Invalid condition expression in " + contextInfo);
+    return false;
+  }
+
+  outExpr = std::make_shared<ConditionExpr>();
+
+  for (size_t i = 0; i < exprJson.size(); ++i) {
+    std::string element = exprJson[i].get<std::string>();
+    
+    if (i % 2 == 0) {
+      // 条件名称
+      ConditionRef ref;
+      if (element[0] == '!') {
+        ref.negated = true;
+        ref.name = element.substr(1);
+      } else {
+        ref.negated = false;
+        ref.name = element;
+      }
+      outExpr->conditions.push_back(ref);
+    } else {
+      // 操作符
+      outExpr->operators.push_back(element);
+    }
+  }
+
+  SMF_LOGD("Parsed condition expression with " + std::to_string(outExpr->conditions.size()) + 
+           " conditions and " + std::to_string(outExpr->operators.size()) + " operators");
+
+  return true;
+}
+
+bool ConfigLoader::ParseConditionExprs(const json& exprsJson, 
+                                       std::vector<ConditionExprSharedPtr>& outExprs,
+                                       const std::string& contextInfo) {
+  if (!exprsJson.is_array()) {
+    SMF_LOGE("conditions_expr must be an array in " + contextInfo);
+    return false;
+  }
+
+  outExprs.clear();
+
+  for (size_t i = 0; i < exprsJson.size(); ++i) {
+    const auto& exprJson = exprsJson[i];
+    ConditionExprSharedPtr expr;
+    if (!ParseConditionExpr(exprJson, expr, contextInfo + " expression #" + std::to_string(i))) {
+      return false;
+    }
+    outExprs.push_back(expr);
+  }
+
+  SMF_LOGI("Parsed " + std::to_string(outExprs.size()) + " condition expressions in " + contextInfo);
+
+  return true;
 }
 
 bool ConfigLoader::ValidateCondition(const json& condition) const {

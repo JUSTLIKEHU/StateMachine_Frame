@@ -28,6 +28,9 @@ add_subdirectory(multi_event_test)
 # 添加timeout测试目录
 add_subdirectory(condition_timeout_test)
 
+# 添加复杂条件表达式测试目录
+add_subdirectory(condition_expr_test)
+
 # 设置线程库
 find_package(Threads REQUIRED)
 
