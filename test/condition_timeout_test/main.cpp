@@ -68,7 +68,7 @@ int main() {
   stateMachine->SetPostEventCallback(&handler, &TimeoutTestHandler::OnPostEvent);
 
   // 初始化状态机配置
-  if (!stateMachine->Init("test/timeout_test/config")) {
+  if (!stateMachine->Init("../../test/condition_timeout_test/config")) {
     SMF_LOGE("初始化状态机失败");
     return -1;
   }

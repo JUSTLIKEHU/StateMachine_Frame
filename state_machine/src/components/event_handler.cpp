@@ -348,14 +348,17 @@ void EventHandler::GetUnsatisfiedConditionsFromExprs(
     }
   }
 
-  // 检查每个条件是否满足
+  // 遍历所有已定义的条件，检查其是否在表达式中被引用
+  // 对于每个引用的条件，需要检查其是否真正满足
+  // 由于复杂表达式的判断逻辑较复杂，这里简化处理：
+  // 收集所有在表达式中的条件名，并记录其当前值
   for (const auto& name : conditionNames) {
     int value = 0;
     condition_manager_->GetConditionValue(name, value);
-    // 对于复杂表达式，我们简单地检查条件值是否为1（满足）
-    if (value != 1) {
-      unsatisfiedConditions.push_back({name, value, 0});
-    }
+    // 注意：这里只记录条件的当前值，实际是否满足取决于表达式的完整计算
+    // 由于表达式可能包含 AND/OR/取反逻辑，无法简单判断单个条件是否"不满足"
+    // 这里记录所有条件信息供后续处理使用
+    unsatisfiedConditions.push_back({name, value, 0});
   }
 }
 

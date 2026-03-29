@@ -143,10 +143,12 @@ bool ConditionManager::CheckConditionRef(const ConditionRef& ref,
   bool satisfied = false;
 
   // 查找该条件名称对应的 Condition 定义
+  bool found = false;
   for (const auto& cond : all_conditions_) {
     if (cond->name == ref.name) {
+      found = true;
       satisfied = cond->IsValueInRange(value);
-      
+
       // 检查持续时间
       if (cond->duration > 0 && satisfied) {
         auto now = std::chrono::steady_clock::now();
@@ -162,6 +164,12 @@ bool ConditionManager::CheckConditionRef(const ConditionRef& ref,
       }
       break;
     }
+  }
+
+  // 如果条件定义未找到，记录警告
+  if (!found) {
+    SMF_LOGW("Condition definition not found for: " + ref.name +
+             ", treating as not satisfied. Make sure the condition is defined via AddCondition().");
   }
 
   // 应用取反逻辑

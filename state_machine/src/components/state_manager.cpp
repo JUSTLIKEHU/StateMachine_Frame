@@ -226,7 +226,7 @@ void StateManager::StateTimeoutLoop() {
         timeoutState = current_state_timeout_.state;
         shouldTriggerTimeout = true;
 
-        // 更新下一次超时时间
+        // 更新下一次超时时间，持续触发直到状态改变
         current_state_timeout_.expiryTime =
             now + std::chrono::milliseconds(current_state_timeout_.timeout);
       } else {
