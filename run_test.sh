@@ -7,8 +7,17 @@ RED='\033[0;31m'
 YELLOW='\033[0;33m'
 NC='\033[0m' # 无颜色
 
+# 获取脚本所在目录的绝对路径
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 切换到项目根目录
+cd "$SCRIPT_DIR" || {
+  echo -e "${RED}错误: 无法切换到项目目录${NC}"
+  exit 1
+}
+
 # 检查build目录是否存在
-BUILD_DIR="build"
+BUILD_DIR="${SCRIPT_DIR}/build"
 BIN_DIR="${BUILD_DIR}/bin"
 
 if [ ! -d "$BIN_DIR" ]; then
@@ -157,5 +166,4 @@ if [ "$1" = "expr" ] || [ "$1" = "all" ]; then
   fi
 fi
 
-cd ../../
 echo -e "${GREEN}所有测试完成${NC}"

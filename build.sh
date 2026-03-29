@@ -7,6 +7,15 @@ RED='\033[0;31m'
 YELLOW='\033[0;33m'
 NC='\033[0m' # 无颜色
 
+# 获取脚本所在目录的绝对路径
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 切换到项目根目录
+cd "$SCRIPT_DIR" || {
+  echo -e "${RED}错误: 无法切换到项目目录${NC}"
+  exit 1
+}
+
 # 检查必要的命令是否存在
 check_command() {
     if ! command -v $1 &> /dev/null; then
@@ -38,7 +47,7 @@ if [ "$1" = "test" ]; then
 fi
 
 # 检查目录
-BUILD_DIR="build"
+BUILD_DIR="${SCRIPT_DIR}/build"
 BIN_DIR="${BUILD_DIR}/bin"
 
 # 创建目录如果不存在
@@ -58,7 +67,7 @@ cd "$BUILD_DIR" || {
 
 # 运行CMake
 echo -e "${BLUE}配置工程...${NC}"
-cmake .. -DBUILD_TESTS=${BUILD_TESTS} || {
+cmake "$SCRIPT_DIR" -DBUILD_TESTS=${BUILD_TESTS} || {
     echo -e "${RED}错误: CMake 配置失败${NC}"
     exit 1
 }
@@ -79,7 +88,7 @@ if [ $? -eq 0 ]; then
     echo -e "${BLUE}生成的可执行文件:${NC}"
     ls -la "$BIN_DIR"
   fi
-  
+
   # 显示如何运行测试的提示
   if [ "$BUILD_TESTS" = "ON" ]; then
     echo -e "${YELLOW}要运行测试，请使用: ./run_test.sh [选项]${NC}"
@@ -88,5 +97,3 @@ else
   echo -e "${RED}编译失败！${NC}"
   exit 1
 fi
-
-cd ..
