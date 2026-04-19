@@ -222,6 +222,7 @@ struct PendingTransition {
   std::chrono::steady_clock::time_point createTime;  // 创建时间
   std::chrono::steady_clock::time_point expiryTime;  // 超时时间
   std::vector<ConditionInfo> unsatisfiedConditions;  // 未满足的条件信息
+  bool onTransitionInvoked{false};                   // OnTransition 回调是否已在挂起阶段触发过
 };
 
 }  // namespace smf

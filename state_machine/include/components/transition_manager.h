@@ -69,6 +69,9 @@ class TransitionManager : public ITransitionManager {
   void RemovePendingTransition(const TransitionRuleSharedPtr& rule) override;
   void ClearPendingTransitions() override;
 
+  void MarkPendingTransitionInvoked(const TransitionRuleSharedPtr& rule) override;
+  bool IsPendingTransitionInvoked(const TransitionRuleSharedPtr& rule) const override;
+
  private:
   // 使用状态ID和事件类型作为键的复合键结构
   struct TransitionKey {

@@ -27,6 +27,7 @@
 - **基于时间的条件**：支持需要满足特定持续时间的条件。
 - **状态超时机制**：可以为状态定义超时时间，当状态持续时间超过指定值时触发超时事件。
 - **转换超时机制**：支持转换规则超时，处理条件暂时不满足的情况。
+- **两阶段 OnTransition（待处理转换）**：当转换规则配置了 `timeout > 0`，且事件首次匹配但条件尚未满足时，会立即执行 `OnTransition` 回调（候选阶段通知业务层）。后续条件满足、待处理转换被消费时，仅执行 `OnExitState` 与 `OnEnterState`，**不再重复**回调 `OnTransition`。这种两阶段语义让业务能在"转换被识别"的那一刻先做准备，与"实际状态切换"解耦。同时，待处理转换存在期间相同事件再次到达会被去重（不会重复创建 pending、不会重复回调 `OnTransition`）。
 - **灵活的回调机制**：支持lambda函数和类成员函数作为回调。
 - **完整的状态层次结构**：在回调中提供完整的状态层次信息。
 - **集成日志系统**：具有多种日志级别的线程安全日志系统。
@@ -137,17 +138,26 @@ StateMachine_Frame/
 │   │           ├── longwait_timeout.json   # 长等待超时转换
 │   │           └── completed_to_working.json # 完成到工作转换
 │   ├── condition_timeout_test/ # 条件超时测试
-│       ├── CMakeLists.txt    # 测试构建配置
-│       ├── main.cpp          # 条件超时测试
-│       └── config/           # 测试配置
-│           ├── state_config.json       # 状态配置
-│           ├── event_generate_config/  # 事件生成配置
-│           │   ├── start_heating.json      # 开始加热事件
-│           │   └── increase_pressure.json  # 增加压力事件
-│           └── trans_config/           # 转换配置
-│               ├── idle2heating.json          # 空闲到加热转换
-│               ├── heating2pressurizing.json  # 加热到加压转换
-│               └── pressurizing2ready.json    # 加压到就绪转换
+│   │   ├── CMakeLists.txt    # 测试构建配置
+│   │   ├── main.cpp          # 条件超时测试
+│   │   └── config/           # 测试配置
+│   │       ├── state_config.json       # 状态配置
+│   │       ├── event_generate_config/  # 事件生成配置
+│   │       │   ├── start_heating.json      # 开始加热事件
+│   │       │   └── increase_pressure.json  # 增加压力事件
+│   │       └── trans_config/           # 转换配置
+│   │           ├── idle2heating.json          # 空闲到加热转换
+│   │           ├── heating2pressurizing.json  # 加热到加压转换
+│   │           └── pressurizing2ready.json    # 加压到就绪转换
+│   ├── pre_transition_test/  # 两阶段 OnTransition（挂起转移）单元测试
+│   │   ├── CMakeLists.txt    # 测试构建配置
+│   │   ├── main.cpp          # 验证：提前触发 + 恢复时跳过 + 去重
+│   │   └── config/           # 测试配置
+│   │       ├── state_config.json       # idle / heating / ready
+│   │       └── trans_config/           # 转换规则
+│   │           ├── idle2heating.json          # 挂起场景（timeout=3000）
+│   │           ├── heating2ready.json         # 立即转移（timeout=0）
+│   │           └── ready2idle.json            # 挂起+到期场景（timeout=500）
 │   └── condition_expr_test/  # 复杂条件表达式测试
 │       ├── CMakeLists.txt    # 测试构建配置
 │       ├── condition_expr_test.cpp  # 复杂条件表达式测试
@@ -248,7 +258,8 @@ class ITransitionManager : public IComponent {
                             std::vector<TransitionRule>& out_rules) = 0;
   // 清除所有转换规则
   virtual void Clear() = 0;
-  // 添加待处理转换
+  // 添加待处理转换。若同一规则的 pending 已存在，则不重复添加并返回 false；
+  // 该去重同时保证提前触发的 OnTransition 回调不会被重复调用。
   virtual bool AddPendingTransition(const TransitionRuleSharedPtr& rule, 
                                   const EventPtr& event,
                                   const std::vector<ConditionInfo>& unsatisfied_conditions) = 0;
@@ -256,6 +267,10 @@ class ITransitionManager : public IComponent {
   virtual bool FindPendingTransition(const State& current_state, 
                                    const EventPtr& event,
                                    std::vector<TransitionRuleSharedPtr>& out_rules) = 0;
+  // 标记指定规则的待处理转换：提前触发的 OnTransition 回调已被调用
+  virtual void MarkPendingTransitionInvoked(const TransitionRuleSharedPtr& rule) = 0;
+  // 查询指定规则的待处理转换是否已经触发过提前的 OnTransition 回调
+  virtual bool IsPendingTransitionInvoked(const TransitionRuleSharedPtr& rule) const = 0;
 };
 ```
 
@@ -376,8 +391,10 @@ class IConfigLoader : public IComponent {
     std::chrono::steady_clock::time_point createTime;  // 创建时间
     std::chrono::steady_clock::time_point expiryTime;  // 超时时间
     std::vector<ConditionInfo> unsatisfiedConditions;  // 未满足的条件信息
+    bool onTransitionInvoked{false};                   // 挂起阶段是否已经触发过 OnTransition 回调
   };
   ```
+  - `onTransitionInvoked` 字段用于支撑两阶段 `OnTransition` 语义：在挂起创建时调用过提前的 `OnTransition` 后置为 `true`；条件满足后消费该挂起转移时会被读取，从而保证 `OnTransition` 不会被第二次回调。
 
 12. **状态事件处理器**
   ```cpp
@@ -852,6 +869,15 @@ SMF_LOGE("这是一条错误信息");
 - 验证条件持续不满足时的超时到期
 - 测试条件超时与状态机逻辑的集成
 
+### 两阶段 OnTransition（Pre-Transition）测试
+位于 `test/pre_transition_test`，是一个自校验的单元测试。它通过原子计数器与 `ASSERT_EQ` 风格断言精确统计各类回调次数，任何一项不符均会以非零退出码终止，覆盖以下场景：
+- **挂起创建**：事件匹配到带 `timeout > 0` 的规则但条件未满足时，`OnTransition` 恰好回调 1 次，状态保持不变。
+- **恢复消费**：条件后续满足，挂起被消费，仅触发各 1 次的 `OnExitState` 与 `OnEnterState`，`OnTransition` **不再回调**。
+- **立即转移**：`timeout = 0` 且条件已满足的规则按旧行为触发 `OnTransition + OnExitState + OnEnterState` 各 1 次。
+- **挂起到期**：条件始终未满足，仅保留挂起阶段提前触发的 `OnTransition`，无 exit/enter 回调，状态保持不变。
+- **到期后再次触发**：会创建一条全新的挂起，因此 `OnTransition` 会再次触发 — 验证 `onTransitionInvoked` 标记是按"每条 pending"维度跟踪的。
+- **AddPendingTransition 去重**：在同一条 pending 存在期间反复发送相同事件，不会创建重复 pending、`OnTransition` 不会被多次回调；后续条件满足时仍仅消费 1 次（`OnExitState`/`OnEnterState` 各 1 次）。
+
 ---
 
 ## API参考
@@ -1325,12 +1351,16 @@ graph TD
     FindRules -- 未找到规则 --> CheckPending["检查待处理转换<br>(TransitionManager)"]
     FindRules -- 未找到规则 --> End
     
-    CheckCond -- 条件满足 --> TransCallback["触发转换回调<br>(OnTransition)"]
+    CheckCond -- 条件满足 --> CheckResume{"是否由挂起转移恢复?"}
+    CheckResume -- "否（常规）" --> TransCallback["触发转换回调<br>(OnTransition)"]
+    CheckResume -- "是（挂起阶段已提前触发）" --> ExitStates
     CheckCond -- 条件不满足 --> CheckTimeout{"有超时?"}
     
-    CheckTimeout -- 是 --> AddPending["添加待处理转换<br>(TransitionManager)"]
+    CheckTimeout -- 是 --> AddPending["添加待处理转换<br>(去重；仅首次添加)"]
+    AddPending -- "新添加" --> EarlyTrans["提前触发转换回调<br>(OnTransition, 标记已触发)"]
+    AddPending -- "重复（跳过）" --> End
     CheckTimeout -- 否 --> End
-    AddPending --> End
+    EarlyTrans --> End
     
     CheckPending -- 有待处理 --> CheckCond
     CheckPending -- 无待处理 --> End
@@ -1374,23 +1404,29 @@ graph TD
     CreateEvent --> End
 ```
 
-5. **待处理转换管理**
+5. **待处理转换管理（两阶段 OnTransition）**
 ```mermaid
 graph TD
-    Start["转换条件不满足"] --> CheckTimeout{"有转换超时?"}
-    CheckTimeout -- 是 --> CreatePending["创建待处理转换"]
+    Start["事件匹配规则但条件不满足"] --> CheckTimeout{"配置了转换超时?"}
     CheckTimeout -- 否 --> End[结束]
+    CheckTimeout -- 是 --> Dedup{"同规则的待处理转换是否已存在?"}
+    Dedup -- "是" --> SkipDup["跳过（不重复创建 pending、<br>不重复回调 OnTransition）"]
+    Dedup -- "否" --> CreatePending["创建待处理转换"]
+    CreatePending --> EarlyCb["Pre-Transition 阶段：调用 OnTransition<br>(标记 onTransitionInvoked = true)"]
+    EarlyCb --> WaitCondition["等待条件满足或超时"]
+    SkipDup --> WaitCondition
     
-    CreatePending --> WaitCondition["等待条件满足或超时"]
-    WaitCondition --> ConditionSatisfied{"条件满足?"}
+    WaitCondition --> ConditionSatisfied{"条件随后满足?"}
     WaitCondition --> TimeoutExpired{"超时到期?"}
     
-    ConditionSatisfied -- 是 --> ExecuteTransition["执行转换"]
-    TimeoutExpired -- 是 --> CleanupPending["清理待处理转换"]
+    ConditionSatisfied -- 是 --> Resume["恢复消费：跳过 OnTransition，<br>仅执行 OnExitState -> SetState -> OnEnterState"]
+    TimeoutExpired -- 是 --> CleanupPending["清理待处理转换<br>（不再触发任何回调）"]
     
-    ExecuteTransition --> End
+    Resume --> End
     CleanupPending --> End
 ```
+
+提前触发的 `OnTransition` 回调使用的是 **用户原始事件**（而非内部条件变化事件），并使用基于 `from -> to` 计算的 exit/enter 状态层次，确保业务回调与原单阶段流程接收到相同的参数。如果挂起转移最终因超时未消费，提前触发的回调依然成立；业务侧应将其视为"候选转移但未真正完成"，通过后续是否收到 `OnExitState` / `OnEnterState` 来判别。
 
 以下图表说明了有限状态机的详细处理流程：
 

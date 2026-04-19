@@ -1,0 +1,23 @@
+{
+  "states": [
+    {
+      "name": "idle",
+      "parent": "",
+      "children": [],
+      "timeout": 0
+    },
+    {
+      "name": "heating",
+      "parent": "",
+      "children": [],
+      "timeout": 0
+    },
+    {
+      "name": "ready",
+      "parent": "",
+      "children": [],
+      "timeout": 0
+    }
+  ],
+  "initial_state": "idle"
+}

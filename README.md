@@ -27,6 +27,7 @@ This is a C++ implementation of a **Finite State Machine (FSM)** that supports e
 - **Time-Based Conditions**: Support for conditions that require a specific duration to be met.
 - **State Timeout Mechanism**: Ability to define timeout for states, triggering a timeout event when a state exceeds its specified duration.
 - **Transition Timeout Mechanism**: Support for transition rule timeout, handling cases where conditions are temporarily not satisfied.
+- **Two-phase OnTransition (Pending Transition)**: When a transition rule with `timeout > 0` matches an event but its conditions are not yet satisfied, the `OnTransition` callback fires immediately at pending creation. When conditions later become satisfied, only `OnExitState` and `OnEnterState` run on resume — `OnTransition` is NOT invoked again. This lets business code react at the moment a transition becomes a candidate, decoupled from the actual state switch. Repeat triggers of the same event while the pending exists are deduplicated (no duplicate pending entry, no duplicate `OnTransition`).
 - **Flexible Callback Mechanism**: Support for lambda functions and class member functions as callbacks.
 - **Complete State Hierarchy**: Provide complete state hierarchy information in callbacks.
 - **Integrated Logging System**: A thread-safe logging system with multiple log levels.
@@ -136,18 +137,27 @@ StateMachine_Frame/
 │   │           ├── wait_timeout.json       # Waiting timeout transition
 │   │           ├── longwait_timeout.json   # Long wait timeout transition
 │   │           └── completed_to_working.json # Completed to working transition
-│   └── condition_timeout_test/ # Condition timeout tests
+│   ├── condition_timeout_test/ # Condition timeout tests
+│   │   ├── CMakeLists.txt    # Test build configuration
+│   │   ├── main.cpp          # Condition timeout test
+│   │   └── config/           # Test configurations
+│   │       ├── state_config.json       # State configuration
+│   │       ├── event_generate_config/  # Event generation configs
+│   │       │   ├── start_heating.json      # Start heating event
+│   │       │   └── increase_pressure.json  # Increase pressure event
+│   │       └── trans_config/           # Transition configurations
+│   │           ├── idle2heating.json          # Idle to heating transition
+│   │           ├── heating2pressurizing.json  # Heating to pressurizing transition
+│   │           └── pressurizing2ready.json    # Pressurizing to ready transition
+│   └── pre_transition_test/  # Two-phase OnTransition (pending) unit test
 │       ├── CMakeLists.txt    # Test build configuration
-│       ├── main.cpp          # Condition timeout test
+│       ├── main.cpp          # Asserts: early OnTransition + skip on resume + dedup
 │       └── config/           # Test configurations
-│           ├── state_config.json       # State configuration
-│           ├── event_generate_config/  # Event generation configs
-│           │   ├── start_heating.json      # Start heating event
-│           │   └── increase_pressure.json  # Increase pressure event
+│           ├── state_config.json       # idle / heating / ready
 │           └── trans_config/           # Transition configurations
-│               ├── idle2heating.json          # Idle to heating transition
-│               ├── heating2pressurizing.json  # Heating to pressurizing transition
-│               └── pressurizing2ready.json    # Pressurizing to ready transition
+│               ├── idle2heating.json          # Pending (timeout=3000)
+│               ├── heating2ready.json         # Immediate (timeout=0)
+│               └── ready2idle.json            # Pending (timeout=500, expiry case)
 └── third_party/              # External dependencies
     └── nlohmann-json/        # JSON library
         ├── json_fwd.hpp      # Forward declarations
@@ -236,7 +246,9 @@ class ITransitionManager : public IComponent {
                             std::vector<TransitionRule>& out_rules) = 0;
   // Clear all transition rules
   virtual void Clear() = 0;
-  // Add pending transition
+  // Add pending transition. Returns false (without adding) if a pending entry
+  // for the same rule already exists — this dedup also guarantees that the
+  // pre-transition OnTransition callback never fires twice for the same pending.
   virtual bool AddPendingTransition(const TransitionRuleSharedPtr& rule, 
                                   const EventPtr& event,
                                   const std::vector<ConditionInfo>& unsatisfied_conditions) = 0;
@@ -244,6 +256,12 @@ class ITransitionManager : public IComponent {
   virtual bool FindPendingTransition(const State& current_state, 
                                    const EventPtr& event,
                                    std::vector<TransitionRuleSharedPtr>& out_rules) = 0;
+  // Mark that the early OnTransition callback has been invoked for the
+  // pending entry of the given rule.
+  virtual void MarkPendingTransitionInvoked(const TransitionRuleSharedPtr& rule) = 0;
+  // Query whether the early OnTransition callback was already invoked for
+  // the pending entry of the given rule.
+  virtual bool IsPendingTransitionInvoked(const TransitionRuleSharedPtr& rule) const = 0;
 };
 ```
 
@@ -364,8 +382,10 @@ class IConfigLoader : public IComponent {
     std::chrono::steady_clock::time_point createTime;  // Creation time
     std::chrono::steady_clock::time_point expiryTime;  // Timeout time
     std::vector<ConditionInfo> unsatisfiedConditions;  // Unsatisfied condition information
+    bool onTransitionInvoked{false};                   // Whether OnTransition has fired during the pending phase
   };
   ```
+  - `onTransitionInvoked` powers the two-phase `OnTransition` semantics: it is set to `true` right after the pre-transition `OnTransition` callback runs at pending creation, and is checked when the pending is resumed so that `OnTransition` is not invoked a second time.
 
 12. **State Event Handler**
   ```cpp
@@ -836,6 +856,26 @@ A specialized test for the complex condition expression feature:
 - Testing sequential operator evaluation (`A OR B AND C` = `(A OR B) AND C`)
 - Demonstrating flexible condition combinations for state transitions
 - Complete flow testing including condition checks and state transitions
+
+### Pre-Transition (Two-phase OnTransition) Test
+A self-checking unit test (`test/pre_transition_test`) that verifies the two-phase
+`OnTransition` behavior of pending transitions. It uses atomic counters and
+`ASSERT_EQ` style checks; any failure exits with a non-zero status. Covered scenarios:
+- **Pending creation**: an event matches a rule with `timeout > 0` but conditions
+  are not satisfied — `OnTransition` fires exactly once and the state is unchanged.
+- **Resume**: when conditions become satisfied, the pending is consumed —
+  `OnExitState` and `OnEnterState` each fire once, and `OnTransition` is **not**
+  invoked again.
+- **Immediate transition**: a `timeout = 0` rule with conditions already satisfied
+  triggers `OnTransition + OnExitState + OnEnterState` exactly once (legacy behavior).
+- **Pending expiry**: when conditions never become satisfied, only the early
+  `OnTransition` fires; no exit/enter callbacks occur and the state remains unchanged.
+- **Re-trigger after expiry**: a brand-new pending is created, so `OnTransition`
+  fires again — proving the `onTransitionInvoked` flag is per-pending-entry.
+- **AddPendingTransition dedup**: triggering the same event multiple times while
+  a pending exists does not create duplicate pending entries and does not invoke
+  `OnTransition` more than once; consuming the (single) pending later still runs
+  exactly one `OnExitState + OnEnterState` pair.
 
 ---
 
@@ -1309,12 +1349,16 @@ graph TD
     FindRules -- No Rules Found --> CheckPending["Check Pending Transitions<br>(TransitionManager)"]
     FindRules -- No Rules Found --> End
     
-    CheckCond -- Conditions Satisfied --> TransCallback["Trigger Transition Callback<br>(OnTransition)"]
+    CheckCond -- Conditions Satisfied --> CheckResume{"Resumed from pending?"}
+    CheckResume -- "No (regular)" --> TransCallback["Trigger Transition Callback<br>(OnTransition)"]
+    CheckResume -- "Yes (already pre-invoked)" --> ExitStates
     CheckCond -- Conditions Not Satisfied --> CheckTimeout{"Has Timeout?"}
     
-    CheckTimeout -- Yes --> AddPending["Add Pending Transition<br>(TransitionManager)"]
+    CheckTimeout -- Yes --> AddPending["Add Pending Transition<br>(dedup; first add only)"]
+    AddPending -- "Newly added" --> EarlyTrans["Early Transition Callback<br>(OnTransition, mark invoked)"]
+    AddPending -- "Duplicate (skipped)" --> End
     CheckTimeout -- No --> End
-    AddPending --> End
+    EarlyTrans --> End
     
     CheckPending -- Pending Found --> CheckCond
     CheckPending -- No Pending --> End
@@ -1358,23 +1402,29 @@ graph TD
     CreateEvent --> End
 ```
 
-5. **Pending Transition Management**
+5. **Pending Transition Management (two-phase OnTransition)**
 ```mermaid
 graph TD
-    Start["Transition Conditions Not Satisfied"] --> CheckTimeout{"Has Transition Timeout?"}
-    CheckTimeout -- Yes --> CreatePending["Create Pending Transition"]
+    Start["Event matches rule, conditions NOT satisfied"] --> CheckTimeout{"Has Transition Timeout?"}
     CheckTimeout -- No --> End[End]
+    CheckTimeout -- Yes --> Dedup{"Pending for same rule already exists?"}
+    Dedup -- "Yes" --> SkipDup["Skip (no duplicate pending,<br>no duplicate OnTransition)"]
+    Dedup -- "No" --> CreatePending["Create Pending Transition"]
+    CreatePending --> EarlyCb["Pre-Transition: invoke OnTransition<br>(mark onTransitionInvoked = true)"]
+    EarlyCb --> WaitCondition["Wait for conditions or timeout"]
+    SkipDup --> WaitCondition
     
-    CreatePending --> WaitCondition["Wait for Conditions or Timeout"]
-    WaitCondition --> ConditionSatisfied{"Conditions Satisfied?"}
-    WaitCondition --> TimeoutExpired{"Timeout Expired?"}
+    WaitCondition --> ConditionSatisfied{"Conditions satisfied later?"}
+    WaitCondition --> TimeoutExpired{"Timeout expired?"}
     
-    ConditionSatisfied -- Yes --> ExecuteTransition["Execute Transition"]
-    TimeoutExpired -- Yes --> CleanupPending["Cleanup Pending Transition"]
+    ConditionSatisfied -- Yes --> Resume["Resume: skip OnTransition,<br>run OnExitState -> SetState -> OnEnterState"]
+    TimeoutExpired -- Yes --> CleanupPending["Cleanup pending transition<br>(no further callbacks)"]
     
-    ExecuteTransition --> End
+    Resume --> End
     CleanupPending --> End
 ```
+
+The early `OnTransition` callback uses the **original user event** (not the internal condition-change event) and the exit/enter state hierarchy computed from `from -> to`, so callback handlers receive the same arguments they would have received in the legacy single-phase flow. If the pending expires before conditions are met, the early callback still stands; business logic should treat it as a "candidate transition that did not complete" (the absence of subsequent `OnExitState` / `OnEnterState` is the signal).
 
 The following diagram illustrates the detailed processing flow of the Finite State Machine:
 

@@ -32,7 +32,7 @@ include(GNUInstallDirs)
 add_subdirectory(state_machine)
 
 # 添加测试编译选项，默认为OFF
-option(BUILD_TESTS "构建测试" OFF)
+option(BUILD_TESTS "构建测试" ON)
 
 # 条件添加test子目录
 if(BUILD_TESTS)

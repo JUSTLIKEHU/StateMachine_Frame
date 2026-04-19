@@ -132,11 +132,24 @@ bool TransitionManager::AddPendingTransition(
   auto now = std::chrono::steady_clock::now();
   auto expiryTime = now + std::chrono::milliseconds(rule->timeout);
 
-  PendingTransition pendingTransition{
-      rule, {event->GetName(), INTERNAL_EVENT}, now, expiryTime, unsatisfiedConditions};
-
   {
     std::unique_lock<std::shared_mutex> lock(pending_mutex_);
+
+    // 去重：若相同规则的挂起转移已存在，则不重复添加
+    for (const auto& pending : pending_transitions_) {
+      if (pending.rule == rule) {
+        SMF_LOGD("Pending transition already exists, skip adding: " + rule->from + " -> " +
+                 rule->to);
+        return false;
+      }
+    }
+
+    PendingTransition pendingTransition{rule,
+                                        {event->GetName(), INTERNAL_EVENT},
+                                        now,
+                                        expiryTime,
+                                        unsatisfiedConditions,
+                                        /*onTransitionInvoked=*/false};
     pending_transitions_.push_back(std::move(pendingTransition));
 
     std::string log_msg = "Added pending transition: " + rule->from + " -> " + rule->to +
@@ -224,6 +237,37 @@ void TransitionManager::ClearPendingTransitions() {
     pending_transitions_.clear();
     SMF_LOGI("Cleared all pending transitions");
   }
+}
+
+void TransitionManager::MarkPendingTransitionInvoked(const TransitionRuleSharedPtr& rule) {
+  if (!running_) {
+    return;
+  }
+
+  {
+    std::unique_lock<std::shared_mutex> lock(pending_mutex_);
+    for (auto& pending : pending_transitions_) {
+      if (pending.rule == rule) {
+        pending.onTransitionInvoked = true;
+      }
+    }
+  }
+}
+
+bool TransitionManager::IsPendingTransitionInvoked(const TransitionRuleSharedPtr& rule) const {
+  if (!running_) {
+    return false;
+  }
+
+  {
+    std::shared_lock<std::shared_mutex> lock(pending_mutex_);
+    for (const auto& pending : pending_transitions_) {
+      if (pending.rule == rule) {
+        return pending.onTransitionInvoked;
+      }
+    }
+  }
+  return false;
 }
 
 }  // namespace smf

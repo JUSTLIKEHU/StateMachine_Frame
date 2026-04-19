@@ -31,6 +31,9 @@ add_subdirectory(condition_timeout_test)
 # 添加复杂条件表达式测试目录
 add_subdirectory(condition_expr_test)
 
+# 添加挂起转移两阶段 OnTransition 测试目录
+add_subdirectory(pre_transition_test)
+
 # 设置线程库
 find_package(Threads REQUIRED)
 

@@ -73,9 +73,12 @@ class EventHandler : public IEventHandler {
   void PrintSatisfiedConditions(const std::vector<ConditionInfo>& condition_infos) const;
 
   // 辅助方法
+  // skip_on_transition 为 true 时跳过 OnTransition 回调（用于消费挂起转移，
+  // OnTransition 已在挂起创建阶段提前触发过）
   void ExecuteTransition(const State& current_state, const TransitionRuleSharedPtr& rule,
                          const EventPtr& event,
-                         const std::vector<ConditionInfo>& condition_infos = {});
+                         const std::vector<ConditionInfo>& condition_infos = {},
+                         bool skip_on_transition = false);
   void GetUnsatisfiedConditions(const std::vector<ConditionSharedPtr>& conditions,
                                 const std::string& op,
                                 std::vector<ConditionInfo>& unsatisfiedConditions);

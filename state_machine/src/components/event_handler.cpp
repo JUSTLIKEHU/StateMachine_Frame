@@ -129,8 +129,11 @@ void EventHandler::ProcessEvent(const EventPtr& event) {
       }
       
       if (conditionsSatisfied) {
-        // 执行状态转换，并传递满足的条件信息
-        ExecuteTransition(current_state, rule, event, condition_infos);
+        // 若挂起阶段已回调过 OnTransition，则消费时跳过 OnTransition，
+        // 仅执行 OnExitState -> SetState -> OnEnterState
+        const bool alreadyInvoked = transition_manager_->IsPendingTransitionInvoked(rule);
+        ExecuteTransition(current_state, rule, event, condition_infos,
+                          /*skip_on_transition=*/alreadyInvoked);
         eventHandled = true;
         transition_manager_->RemovePendingTransition(rule);
         break;  // 找到匹配的待触发转移后立即执行
@@ -169,9 +172,21 @@ void EventHandler::ProcessEvent(const EventPtr& event) {
           GetUnsatisfiedConditions(rule->conditions, rule->conditionsOperator, unsatisfiedConditions);
         }
 
+        // 仅当真正新挂起（无重复）时，提前回调 OnTransition
         if (transition_manager_->AddPendingTransition(rule, event, unsatisfiedConditions)) {
           SMF_LOGI("Added pending transition for rule: " + rule->from + " -> " + rule->to +
                    " with timeout " + std::to_string(rule->timeout) + "ms");
+
+          // 首次事件匹配但条件未满足：提前触发 OnTransition 回调
+          if (state_event_handler_) {
+            std::vector<State> exitStates;
+            std::vector<State> enterStates;
+            state_manager_->GetStateHierarchy(current_state, rule->to, exitStates, enterStates);
+            SMF_LOGI("Pre-Transition (pending): " + current_state + " -> " + rule->to +
+                     " on event " + event->toString() + ", waiting conditions");
+            state_event_handler_->OnTransition(exitStates, event, enterStates);
+          }
+          transition_manager_->MarkPendingTransitionInvoked(rule);
         }
       }
     }
@@ -279,7 +294,8 @@ void EventHandler::PrintSatisfiedConditions(
 
 void EventHandler::ExecuteTransition(const State& current_state,
                                      const TransitionRuleSharedPtr& rule, const EventPtr& event,
-                                     const std::vector<ConditionInfo>& condition_infos) {
+                                     const std::vector<ConditionInfo>& condition_infos,
+                                     bool skip_on_transition) {
   // 获取状态层次结构
   std::vector<State> exitStates;
   std::vector<State> enterStates;
@@ -304,9 +320,12 @@ void EventHandler::ExecuteTransition(const State& current_state,
 
   // 执行状态转换
   if (state_event_handler_) {
-    SMF_LOGI("Transition: " + current_state + " -> " + rule->to + " on event " +
-             event->toString() + conditionsStr);
-    state_event_handler_->OnTransition(exitStates, event, enterStates);
+    const std::string logPrefix = skip_on_transition ? "Transition (resume): " : "Transition: ";
+    SMF_LOGI(logPrefix + current_state + " -> " + rule->to + " on event " + event->toString() +
+             conditionsStr);
+    if (!skip_on_transition) {
+      state_event_handler_->OnTransition(exitStates, event, enterStates);
+    }
     state_event_handler_->OnExitState(exitStates);
   }
 

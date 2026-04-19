@@ -1,0 +1,17 @@
+{
+  "from": "heating",
+  "to": "ready",
+  "event": "go_ready",
+  "conditions": [
+    {
+      "name": "pressure",
+      "range": [
+        10,
+        100
+      ],
+      "duration": 0
+    }
+  ],
+  "conditions_operator": "AND",
+  "timeout": 0
+}

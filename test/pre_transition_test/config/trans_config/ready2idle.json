@@ -1,0 +1,17 @@
+{
+  "from": "ready",
+  "to": "idle",
+  "event": "reset_event",
+  "conditions": [
+    {
+      "name": "reset_flag",
+      "range": [
+        1,
+        1
+      ],
+      "duration": 0
+    }
+  ],
+  "conditions_operator": "AND",
+  "timeout": 500
+}

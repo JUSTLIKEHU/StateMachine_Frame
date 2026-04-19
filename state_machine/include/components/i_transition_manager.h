@@ -59,6 +59,11 @@ class ITransitionManager : public IComponent {
   virtual void RemoveExpiredPendingTransitions() = 0;
   virtual void RemovePendingTransition(const TransitionRuleSharedPtr& rule) = 0;
   virtual void ClearPendingTransitions() = 0;
+
+  // 标记指定挂起转移的 OnTransition 回调已触发
+  virtual void MarkPendingTransitionInvoked(const TransitionRuleSharedPtr& rule) = 0;
+  // 查询指定挂起转移的 OnTransition 回调是否已触发
+  virtual bool IsPendingTransitionInvoked(const TransitionRuleSharedPtr& rule) const = 0;
 };
 
 }  // namespace smf
