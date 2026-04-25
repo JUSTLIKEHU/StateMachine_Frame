@@ -28,6 +28,7 @@
 - **状态超时机制**：可以为状态定义超时时间，当状态持续时间超过指定值时触发超时事件。
 - **转换超时机制**：支持转换规则超时，处理条件暂时不满足的情况。
 - **两阶段 OnTransition（待处理转换）**：当转换规则配置了 `timeout > 0`，且事件首次匹配但条件尚未满足时，会立即执行 `OnTransition` 回调（候选阶段通知业务层）。后续条件满足、待处理转换被消费时，仅执行 `OnExitState` 与 `OnEnterState`，**不再重复**回调 `OnTransition`。这种两阶段语义让业务能在"转换被识别"的那一刻先做准备，与"实际状态切换"解耦。同时，待处理转换存在期间相同事件再次到达会被去重（不会重复创建 pending、不会重复回调 `OnTransition`）。
+- **挂起恢复时使用原始事件**：挂起转换最终常常由条件变化派生的 `__INTERNAL_EVENT__` 来触发消费。为避免业务方在回调中看到陌生的内部事件而困惑，框架会在挂起创建时把"用户原始事件"完整保存下来；恢复阶段的 `OnExitState` / `SetState` / `OnEnterState` / `OnPostEvent` 都会改用这个原始事件回调。无论该规则是立即触发还是先挂起再恢复，业务回调中看到的事件名都是用户最初发出的那一个。
 - **灵活的回调机制**：支持lambda函数和类成员函数作为回调。
 - **完整的状态层次结构**：在回调中提供完整的状态层次信息。
 - **集成日志系统**：具有多种日志级别的线程安全日志系统。
@@ -271,6 +272,10 @@ class ITransitionManager : public IComponent {
   virtual void MarkPendingTransitionInvoked(const TransitionRuleSharedPtr& rule) = 0;
   // 查询指定规则的待处理转换是否已经触发过提前的 OnTransition 回调
   virtual bool IsPendingTransitionInvoked(const TransitionRuleSharedPtr& rule) const = 0;
+  // 取回挂起创建时保存的用户原始事件；恢复阶段的回调会改用该事件，
+  // 避免业务在回调中看到 INTERNAL_EVENT 等内部事件而困惑。无匹配返回 nullptr。
+  virtual EventPtr GetPendingTransitionOriginalEvent(
+      const TransitionRuleSharedPtr& rule) const = 0;
 };
 ```
 
@@ -392,9 +397,11 @@ class IConfigLoader : public IComponent {
     std::chrono::steady_clock::time_point expiryTime;  // 超时时间
     std::vector<ConditionInfo> unsatisfiedConditions;  // 未满足的条件信息
     bool onTransitionInvoked{false};                   // 挂起阶段是否已经触发过 OnTransition 回调
+    EventPtr originalEvent;                            // 挂起创建时保存的用户原始事件（恢复阶段会重放）
   };
   ```
   - `onTransitionInvoked` 字段用于支撑两阶段 `OnTransition` 语义：在挂起创建时调用过提前的 `OnTransition` 后置为 `true`；条件满足后消费该挂起转移时会被读取，从而保证 `OnTransition` 不会被第二次回调。
+  - `originalEvent` 字段用于支撑"恢复阶段使用原始事件"语义：当挂起最终被一个内部事件（如条件变化派生的 `__INTERNAL_EVENT__`）触发消费时，恢复路径上的 `OnExitState` / `OnEnterState` / `OnPostEvent` 会拿这个保存的事件回调，而不是当前正在处理的内部事件。
 
 12. **状态事件处理器**
   ```cpp
@@ -877,6 +884,7 @@ SMF_LOGE("这是一条错误信息");
 - **挂起到期**：条件始终未满足，仅保留挂起阶段提前触发的 `OnTransition`，无 exit/enter 回调，状态保持不变。
 - **到期后再次触发**：会创建一条全新的挂起，因此 `OnTransition` 会再次触发 — 验证 `onTransitionInvoked` 标记是按"每条 pending"维度跟踪的。
 - **AddPendingTransition 去重**：在同一条 pending 存在期间反复发送相同事件，不会创建重复 pending、`OnTransition` 不会被多次回调；后续条件满足时仍仅消费 1 次（`OnExitState`/`OnEnterState` 各 1 次）。
+- **恢复阶段使用原始事件**：所有"恢复挂起"的用例都增加了对 `OnPostEvent` 的额外断言：恢复阶段回调中收到的事件名必须是用户原始事件（如 `go_heat`、`reset_event`），而不是真正触发消费的 `__INTERNAL_EVENT__`。
 
 ---
 
@@ -1427,6 +1435,8 @@ graph TD
 ```
 
 提前触发的 `OnTransition` 回调使用的是 **用户原始事件**（而非内部条件变化事件），并使用基于 `from -> to` 计算的 exit/enter 状态层次，确保业务回调与原单阶段流程接收到相同的参数。如果挂起转移最终因超时未消费，提前触发的回调依然成立；业务侧应将其视为"候选转移但未真正完成"，通过后续是否收到 `OnExitState` / `OnEnterState` 来判别。
+
+当挂起最终被消费时，**同一个用户原始事件**也会在 `OnExitState` / `SetState` / `OnEnterState` / `OnPostEvent` 全链路被重放出来 —— 即使触发消费的实际入口是条件变化派生的 `__INTERNAL_EVENT__`。也就是说，无论该规则是立即触发还是经过挂起再恢复，业务在从提前的 `OnTransition` 一直到 `OnPostEvent` 整条回调链上观察到的"事件身份"都是一致的、来自用户。`OnPreEvent` 不参与重写，因为它的语义是"是否允许这个进入的事件被处理"，必须看到真正进入处理流程的事件。
 
 以下图表说明了有限状态机的详细处理流程：
 

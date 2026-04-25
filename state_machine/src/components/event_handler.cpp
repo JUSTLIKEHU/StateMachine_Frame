@@ -110,6 +110,10 @@ void EventHandler::ProcessEvent(const EventPtr& event) {
   }
 
   bool eventHandled = false;
+  // 当 pending 被消费时，后续的状态相关回调（OnTransition/OnExit/OnEnter/OnPostEvent）
+  // 应使用挂起时保存的"用户原始事件"，而不是当前正在处理的事件
+  // （后者很可能是条件变化派生的 INTERNAL_EVENT，会让用户在回调中产生困惑）。
+  EventPtr callback_event = event;
   std::vector<TransitionRuleSharedPtr> rules;
   // 清理过期的待触发状态转移
   transition_manager_->RemoveExpiredPendingTransitions();
@@ -132,9 +136,18 @@ void EventHandler::ProcessEvent(const EventPtr& event) {
         // 若挂起阶段已回调过 OnTransition，则消费时跳过 OnTransition，
         // 仅执行 OnExitState -> SetState -> OnEnterState
         const bool alreadyInvoked = transition_manager_->IsPendingTransitionInvoked(rule);
-        ExecuteTransition(current_state, rule, event, condition_infos,
+        // 取回挂起时保存的原始事件；若拿不到则回退使用当前事件（理论上不会发生）
+        EventPtr pending_origin = transition_manager_->GetPendingTransitionOriginalEvent(rule);
+        EventPtr resume_event = pending_origin ? pending_origin : event;
+        if (pending_origin && pending_origin.get() != event.get()) {
+          SMF_LOGD("Resume pending transition with original event '" +
+                   pending_origin->GetName() + "' (current processed event: '" +
+                   event->GetName() + "')");
+        }
+        ExecuteTransition(current_state, rule, resume_event, condition_infos,
                           /*skip_on_transition=*/alreadyInvoked);
         eventHandled = true;
+        callback_event = resume_event;
         transition_manager_->RemovePendingTransition(rule);
         break;  // 找到匹配的待触发转移后立即执行
       }
@@ -192,9 +205,9 @@ void EventHandler::ProcessEvent(const EventPtr& event) {
     }
   }
 
-  // 事件回收处理
+  // 事件回收处理：消费挂起时使用原始事件，避免回调中出现内部事件让业务困惑
   if (state_event_handler_) {
-    state_event_handler_->OnPostEvent(event, eventHandled);
+    state_event_handler_->OnPostEvent(callback_event, eventHandled);
   }
 }
 

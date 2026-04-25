@@ -64,6 +64,9 @@ class ITransitionManager : public IComponent {
   virtual void MarkPendingTransitionInvoked(const TransitionRuleSharedPtr& rule) = 0;
   // 查询指定挂起转移的 OnTransition 回调是否已触发
   virtual bool IsPendingTransitionInvoked(const TransitionRuleSharedPtr& rule) const = 0;
+  // 获取触发该挂起转移时保存的用户原始事件；若不存在则返回 nullptr
+  virtual EventPtr GetPendingTransitionOriginalEvent(
+      const TransitionRuleSharedPtr& rule) const = 0;
 };
 
 }  // namespace smf

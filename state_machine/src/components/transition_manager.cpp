@@ -149,7 +149,8 @@ bool TransitionManager::AddPendingTransition(
                                         now,
                                         expiryTime,
                                         unsatisfiedConditions,
-                                        /*onTransitionInvoked=*/false};
+                                        /*onTransitionInvoked=*/false,
+                                        /*originalEvent=*/event};
     pending_transitions_.push_back(std::move(pendingTransition));
 
     std::string log_msg = "Added pending transition: " + rule->from + " -> " + rule->to +
@@ -268,6 +269,23 @@ bool TransitionManager::IsPendingTransitionInvoked(const TransitionRuleSharedPtr
     }
   }
   return false;
+}
+
+EventPtr TransitionManager::GetPendingTransitionOriginalEvent(
+    const TransitionRuleSharedPtr& rule) const {
+  if (!running_) {
+    return nullptr;
+  }
+
+  {
+    std::shared_lock<std::shared_mutex> lock(pending_mutex_);
+    for (const auto& pending : pending_transitions_) {
+      if (pending.rule == rule) {
+        return pending.originalEvent;
+      }
+    }
+  }
+  return nullptr;
 }
 
 }  // namespace smf

@@ -223,6 +223,8 @@ struct PendingTransition {
   std::chrono::steady_clock::time_point expiryTime;  // 超时时间
   std::vector<ConditionInfo> unsatisfiedConditions;  // 未满足的条件信息
   bool onTransitionInvoked{false};                   // OnTransition 回调是否已在挂起阶段触发过
+  EventPtr originalEvent;  // 触发挂起时的用户事件（resume 时回调统一使用该事件，
+                           // 避免回调中出现内部事件造成困惑）
 };
 
 }  // namespace smf

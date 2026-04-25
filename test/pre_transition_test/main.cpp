@@ -39,11 +39,14 @@ struct CallbackCounters {
   std::atomic<int> enterCount{0};
   std::atomic<int> postEventCount{0};
   std::string lastTransitionEvent;
+  std::string lastPostEvent;
   State lastEnterTopState;
   State lastExitTopState;
 };
 
 CallbackCounters g_counters;
+std::mutex g_post_events_mutex;
+std::vector<std::string> g_post_events;  // 按顺序记录 OnPostEvent 看到的事件名
 
 void OnTransition(const std::vector<State>& exitStates, const EventPtr& event,
                   const std::vector<State>& enterStates) {
@@ -77,8 +80,27 @@ void OnEnterState(const std::vector<State>& states) {
 
 void OnPostEvent(const EventPtr& event, bool handled) {
   g_counters.postEventCount.fetch_add(1);
-  SMF_LOGI(std::string("[CB] OnPostEvent: ") + (event ? event->GetName() : "<null>") + " handled=" +
+  const std::string name = event ? event->GetName() : "<null>";
+  g_counters.lastPostEvent = name;
+  {
+    std::lock_guard<std::mutex> lock(g_post_events_mutex);
+    g_post_events.push_back(name);
+  }
+  SMF_LOGI(std::string("[CB] OnPostEvent: ") + name + " handled=" +
            (handled ? "true" : "false"));
+}
+
+bool PostEventSeenSince(size_t base_index, const std::string& name) {
+  std::lock_guard<std::mutex> lock(g_post_events_mutex);
+  for (size_t i = base_index; i < g_post_events.size(); ++i) {
+    if (g_post_events[i] == name) return true;
+  }
+  return false;
+}
+
+size_t PostEventLogSize() {
+  std::lock_guard<std::mutex> lock(g_post_events_mutex);
+  return g_post_events.size();
 }
 
 #define ASSERT_EQ(actual, expected, msg)                                                       \
@@ -88,6 +110,17 @@ void OnPostEvent(const EventPtr& event, bool handled) {
     if (!(_a == _e)) {                                                                         \
       std::cerr << "[ASSERT FAILED] " << (msg) << " expected=" << _e << " actual=" << _a       \
                 << " (" << __FILE__ << ":" << __LINE__ << ")" << std::endl;                    \
+      std::exit(1);                                                                            \
+    } else {                                                                                   \
+      SMF_LOGI(std::string("[ASSERT OK   ] ") + (msg));                                        \
+    }                                                                                          \
+  } while (0)
+
+#define ASSERT_TRUE(cond, msg)                                                                 \
+  do {                                                                                         \
+    if (!(cond)) {                                                                             \
+      std::cerr << "[ASSERT FAILED] " << (msg) << " (" << __FILE__ << ":" << __LINE__ << ")"   \
+                << std::endl;                                                                  \
       std::exit(1);                                                                            \
     } else {                                                                                   \
       SMF_LOGI(std::string("[ASSERT OK   ] ") + (msg));                                        \
@@ -151,8 +184,12 @@ int main() {
   // ------------------------------------------------------------------
   // Scenario 2: conditions later become satisfied -> consume pending
   //   Expect: OnExit + OnEnter fire, OnTransition NOT fired again.
+  //           The OnPostEvent callback for the consuming pass MUST report
+  //           the ORIGINAL user event ("go_heat"), not the synthetic
+  //           __INTERNAL_EVENT__ that came from the condition change.
   // ------------------------------------------------------------------
   SMF_LOGI("--- Scenario 2: resume pending (conditions now satisfied) ---");
+  const size_t pe_base_s2 = PostEventLogSize();
   sm->SetConditionValue("temperature", 25);  // satisfied -> internal event
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
@@ -164,6 +201,10 @@ int main() {
             "Scenario 2: OnEnterState invoked exactly once on resume");
   ASSERT_EQ(sm->GetCurrentState(), std::string("heating"),
             "Scenario 2: state moved to heating");
+  ASSERT_TRUE(PostEventSeenSince(pe_base_s2, std::string("go_heat")),
+              "Scenario 2: OnPostEvent during resume reports ORIGINAL event 'go_heat'");
+  ASSERT_TRUE(!PostEventSeenSince(pe_base_s2, std::string("__INTERNAL_EVENT__")),
+              "Scenario 2: OnPostEvent during resume does NOT report '__INTERNAL_EVENT__'");
 
   // ------------------------------------------------------------------
   // Scenario 3: regular transition, no timeout, condition satisfied immediately
@@ -240,6 +281,7 @@ int main() {
   ASSERT_EQ(g_counters.transitionCount.load() - t5, 1,
             "Scenario 5: new pending -> OnTransition invoked again");
 
+  const size_t pe_base_s5 = PostEventLogSize();
   sm->SetConditionValue("reset_flag", 1);  // now satisfy
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
@@ -251,6 +293,10 @@ int main() {
             "Scenario 5: OnEnterState invoked on resume");
   ASSERT_EQ(sm->GetCurrentState(), std::string("idle"),
             "Scenario 5: state moved back to idle");
+  ASSERT_TRUE(PostEventSeenSince(pe_base_s5, std::string("reset_event")),
+              "Scenario 5: OnPostEvent during resume reports ORIGINAL event 'reset_event'");
+  ASSERT_TRUE(!PostEventSeenSince(pe_base_s5, std::string("__INTERNAL_EVENT__")),
+              "Scenario 5: OnPostEvent during resume does NOT report '__INTERNAL_EVENT__'");
 
   // ------------------------------------------------------------------
   // Scenario 6: AddPendingTransition dedup
@@ -314,6 +360,10 @@ int main() {
 
   // Now satisfy the condition. Because dedup kept exactly ONE pending, only
   // ONE pair of OnExit/OnEnter must fire and OnTransition must not fire again.
+  // The OnPostEvent for the consuming pass must again surface 'go_heat'
+  // (the original event saved on the FIRST pending creation), not the
+  // internal condition event nor any later duplicate trigger.
+  const size_t pe_base_s6_resume = PostEventLogSize();
   sm->SetConditionValue("temperature", 30);
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
@@ -325,6 +375,10 @@ int main() {
             "Scenario 6: resume -> OnEnterState invoked exactly once (single pending consumed)");
   ASSERT_EQ(sm->GetCurrentState(), std::string("heating"),
             "Scenario 6: resume -> state moved to heating");
+  ASSERT_TRUE(PostEventSeenSince(pe_base_s6_resume, std::string("go_heat")),
+              "Scenario 6: OnPostEvent during resume reports ORIGINAL event 'go_heat'");
+  ASSERT_TRUE(!PostEventSeenSince(pe_base_s6_resume, std::string("__INTERNAL_EVENT__")),
+              "Scenario 6: OnPostEvent during resume does NOT report '__INTERNAL_EVENT__'");
 
   // After the pending is consumed, the same rule cannot match anymore from
   // 'heating' state, so further unrelated triggers should leave counters intact.
